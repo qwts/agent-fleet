@@ -18,7 +18,7 @@ export function keychainTokenSource({ execFileImpl = execFile, platform = proces
     execFileImpl('/usr/bin/security', ['find-generic-password', '-s', service, '-a', account, '-w'], { timeout: timeoutMs, encoding: 'utf8' }, (error, stdout) => {
       // security's own messages are not passed on: only a fixed description.
       if (error) {
-        reject(new TokenUnavailable(`no token in the Keychain for service "${service}", account "${account}" (see docs/github-copilot.md)`));
+        reject(new TokenUnavailable(`no token in the Keychain for service "${service}", account "${account}" (see the provider doc for setup steps)`));
         return;
       }
       const token = String(stdout).trim();

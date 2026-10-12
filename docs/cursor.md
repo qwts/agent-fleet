@@ -28,6 +28,7 @@ and reports each one as a record in the same shape as a host
 
    ```json
    {
+     "schemaVersion": 1,
      "providers": {
        "cursor": {}
      },
