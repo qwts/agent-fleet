@@ -71,6 +71,18 @@ test('configured repositories use the per-repository endpoint and need no lookup
   assert.deepEqual(calls.map((c) => c.url), ['https://api.github.com/agents/repos/o/r/tasks?per_page=100&page=1']);
 });
 
+test('maxTasks is shared across configured repositories', async () => {
+  const many = (n, p) => Array.from({ length: n }, (_, i) => ({ id: `${p}${i}`, state: 'completed', created_at: 'x' }));
+  const calls = [];
+  const records = await go(fakeFetch({
+    '/agents/repos/o/a/tasks?per_page=5&page=1': { tasks: many(3, 'a') },
+    '/agents/repos/o/b/tasks?per_page=2&page=1': { tasks: many(5, 'b') },
+    '/agents/repos/o/c/tasks': () => assert.fail('the limit is reached before o/c'),
+  }, calls), { repos: ['o/a', 'o/b', 'o/c'], maxTasks: 5 });
+  assert.equal(records.length, 6, 'account record plus 5 tasks');
+  assert.deepEqual(calls.map((c) => c.url.split('/agents/repos/')[1]), ['o/a/tasks?per_page=5&page=1', 'o/b/tasks?per_page=2&page=1']);
+});
+
 test('pages until maxTasks or a short page', async () => {
   const many = (n, from) => Array.from({ length: n }, (_, i) => ({ id: `t${from + i}`, state: 'completed', created_at: 'x' }));
   const calls = [];
@@ -105,6 +117,11 @@ for (const [label, respond, message, reached] of failures) {
     assert.doesNotMatch(JSON.stringify(records), /TESTTOKEN|Bad credentials|<html>/);
   });
 }
+
+test('an unexpected token source error is not echoed', async () => {
+  const records = await go(async () => assert.fail('no request'), {}, async () => { throw new Error(`boom ${TOKEN}`); });
+  assert.equal(records[0].error, 'token unavailable: the token source failed');
+});
 
 test('a missing token is reported without calling the API', async () => {
   let called = false;

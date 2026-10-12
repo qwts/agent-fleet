@@ -5,7 +5,7 @@
 //
 // One config host becomes one account record plus one record per task, all
 // in the same report shape as an SSH host; a task's details go in `workload`.
-import { redact } from '../token.mjs';
+import { TokenUnavailable, redact } from '../token.mjs';
 
 export const kind = 'api';
 
@@ -40,8 +40,9 @@ export async function collect(host, { options, fetchImpl, tokenSource, deadline 
   try {
     token = await tokenSource({ service: options.keychainService, account: options.keychainAccount });
   } catch (error) {
-    // A token source's message never contains the token.
-    return [{ ...account, error: `token unavailable: ${error.message}` }];
+    // Only a TokenUnavailable message, which sources write without the token,
+    // is passed on; anything else gets a fixed message.
+    return [{ ...account, error: `token unavailable: ${error instanceof TokenUnavailable ? error.message : 'the token source failed'}` }];
   }
   const api = client({ base: options.apiBase.replace(/\/$/, ''), token, fetchImpl, deadline });
   try {
@@ -49,12 +50,16 @@ export async function collect(host, { options, fetchImpl, tokenSource, deadline 
     if (options.repos.length === 0) {
       tasks.push(...await listTasks(api, '/agents/tasks', options.maxTasks));
     } else {
+      // maxTasks is a limit for the whole host: each repository gets what is
+      // left, and none is asked once it is reached.
       for (const repo of options.repos) {
-        for (const task of await listTasks(api, `/agents/repos/${repo}/tasks`, options.maxTasks)) tasks.push({ ...task, repoName: repo });
+        const left = options.maxTasks - tasks.length;
+        if (left <= 0) break;
+        for (const task of await listTasks(api, `/agents/repos/${repo}/tasks`, left)) tasks.push({ ...task, repoName: repo });
       }
     }
     const names = await repoNames(api, tasks);
-    const records = tasks.slice(0, options.maxTasks).map((task) => taskRecord(host, task, names));
+    const records = tasks.map((task) => taskRecord(host, task, names));
     return [{ ...account, reachable: true }, ...records];
   } catch (error) {
     if (!(error instanceof ApiError)) throw error;
@@ -122,7 +127,7 @@ async function listTasks(api, path, maxTasks) {
     const body = await api(`${path}?per_page=${perPage}&page=${page}`);
     const batch = Array.isArray(body?.tasks) ? body.tasks.filter((t) => t && typeof t.id === 'string') : null;
     if (batch === null) throw Object.assign(new ApiError(`GitHub API ${path}: unexpected response shape`), { reached: true });
-    tasks.push(...batch);
+    tasks.push(...batch.slice(0, perPage));
     if (batch.length < perPage) break;
   }
   return tasks;
