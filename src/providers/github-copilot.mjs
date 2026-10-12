@@ -5,6 +5,7 @@
 //
 // One config host becomes one account record plus one record per task, all
 // in the same report shape as an SSH host; a task's details go in `workload`.
+import { sanitizeId, sanitizeRepo, sanitizeText, sanitizeTimestamp, sanitizeUrl } from '../sanitize.mjs';
 import { TokenUnavailable, redact } from '../token.mjs';
 
 export const kind = 'api';
@@ -156,27 +157,29 @@ function taskRecord(host, task, names) {
   const branch = artifacts.find((a) => a?.type === 'branch')?.data ?? {};
   const pull = artifacts.find((a) => a?.type === 'pull')?.data ?? {};
   const repoId = task.repository?.id;
+  const id = sanitizeId(task.id);
+  const repo = task.repoName ?? names.get(repoId) ?? (Number.isInteger(repoId) ? `id:${repoId}` : null);
   return {
-    name: `${host.name}/${task.id}`,
+    name: `${host.name}/${id}`,
     provider: host.provider,
     reachable: true,
     error: null,
     workload: {
       kind: 'copilot-agent-task',
-      id: task.id,
-      title: typeof task.name === 'string' ? task.name : null,
+      id,
+      title: sanitizeText(task.name),
       state: STATES.has(task.state) ? task.state : 'unknown',
-      repo: task.repoName ?? names.get(repoId) ?? (Number.isInteger(repoId) ? `id:${repoId}` : null),
-      branch: typeof branch.head_ref === 'string' ? branch.head_ref : null,
-      baseBranch: typeof branch.base_ref === 'string' ? branch.base_ref : null,
+      repo: sanitizeRepo(repo),
+      branch: sanitizeText(branch.head_ref),
+      baseBranch: sanitizeText(branch.base_ref),
       // The pull artifact's id, as the API gives it (not the PR number).
       pullRequestId: Number.isInteger(pull.id) ? pull.id : null,
-      url: typeof task.html_url === 'string' ? task.html_url : null,
+      url: sanitizeUrl(task.html_url),
       // Not in the documented API: the runner comes from the repository's
       // copilot-setup-steps.yml.
       runtime: null,
-      createdAt: task.created_at ?? null,
-      updatedAt: task.updated_at ?? null,
+      createdAt: sanitizeTimestamp(task.created_at),
+      updatedAt: sanitizeTimestamp(task.updated_at),
     },
   };
 }

@@ -89,6 +89,10 @@ Each host has a provider, and every provider reports the same shape:
   tasks REST API, one record per task with its state, repository, branch and
   pull request in `workload`. It reads a read-only token from the macOS
   Keychain; see [docs/github-copilot.md](docs/github-copilot.md).
+- **`cursor`:** Cursor cloud agents from the Cloud Agents REST API, one
+  record per agent with its state, repository, starting ref and timestamps
+  in `workload`. It reads a read-only API key from the macOS Keychain;
+  see [docs/cursor.md](docs/cursor.md).
 - **SSH providers:** whether the org profile is applied (`settings.unmanagedAuthors`
   and `settings.keydTeamId` present in `~/.config/agent-bot/config.json`;
   presence only, never values) and whether an SOP persona is recorded.

@@ -2,6 +2,7 @@
 // and the component ids it expects; every provider returns the same report
 // shape, so adding one changes neither the config nor the output format.
 import { ConfigError } from '../config.mjs';
+import * as cursor from './cursor.mjs';
 import * as githubCopilot from './github-copilot.mjs';
 import * as sshLinux from './ssh-linux.mjs';
 import * as sshMac from './ssh-mac.mjs';
@@ -10,6 +11,7 @@ export const providers = Object.freeze({
   'ssh-mac': sshMac,
   'ssh-linux': sshLinux,
   'github-copilot': githubCopilot,
+  cursor,
 });
 
 // Merge a provider's config block over its defaults. Keys and types must match
