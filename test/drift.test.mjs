@@ -30,6 +30,13 @@ test('compareVersions orders numerically and puts pre-releases first', () => {
   assert.throws(() => compareVersions('x', '1.0.0'), TypeError);
 });
 
+test('pre-releases compare identifier by identifier, as SemVer orders them', () => {
+  const ordered = ['1.0.0-alpha', '1.0.0-alpha.1', '1.0.0-alpha.beta', '1.0.0-beta', '1.0.0-beta.2', '1.0.0-beta.11', '1.0.0-rc.1', '1.0.0-rc.2', '1.0.0-rc.10', '1.0.0'];
+  for (let i = 1; i < ordered.length; i += 1) assert.ok(compareVersions(ordered[i - 1], ordered[i]) < 0, `${ordered[i - 1]} < ${ordered[i]}`);
+  const t = validateTrain({ minimum: { 'agent-bot': '1.0.0-rc.2' } });
+  assert.deepEqual(hostDrift({ provider: 'ssh-linux', reachable: true, components: [{ id: 'agent-bot', source: 'path', version: '1.0.0-rc.10' }] }, t), []);
+});
+
 test('a host on the train has no drift', () => {
   const host = mac();
   assert.deepEqual(hostDrift(host, train), []);
@@ -83,7 +90,7 @@ test('unreachable and partial hosts', () => {
 });
 
 test('validateTrain rejects unknown keys, bad versions and bad flags', () => {
-  for (const raw of [{ latest: true }, { minimum: [] }, { minimum: { 'agent-bot': '0.10' } }, { minimum: { 'Agent Bot': '1.0.0' } }, { profileRequired: 'yes' }]) {
+  for (const raw of [{ latest: true }, { minimum: [] }, { minimum: null }, { minimum: { 'agent-bot': '01.2.3' } }, { minimum: { 'agent-bot': '1.2.3-01' } }, { minimum: { 'agent-bot': '1.2.3-alpha..1' } }, { minimum: { 'agent-bot': '1.2.3+build..1' } }, { minimum: { 'agent-bot': '0.10' } }, { minimum: { 'Agent Bot': '1.0.0' } }, { profileRequired: 'yes' }]) {
     assert.throws(() => validateTrain(raw), ConfigError, JSON.stringify(raw));
   }
 });

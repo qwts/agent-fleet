@@ -6,13 +6,16 @@ import { providers } from './providers/index.mjs';
 
 const TRAIN_KEYS = new Set(['minimum', 'profileRequired', 'personaRequired', 'servicesRequired']);
 const COMPONENT_ID = /^[a-z0-9][a-z0-9-]*$/;
-const SEMVER = /^(\d+)\.(\d+)\.(\d+)(?:-([0-9A-Za-z.-]+))?(?:\+[0-9A-Za-z.-]+)?$/;
+// SemVer 2.0.0: no leading zeros in numbers, no empty identifiers.
+const NUM = '0|[1-9]\\d*';
+const PRE_ID = `(?:${NUM}|\\d*[A-Za-z-][0-9A-Za-z-]*)`;
+const SEMVER = new RegExp(`^(${NUM})\\.(${NUM})\\.(${NUM})(?:-(${PRE_ID}(?:\\.${PRE_ID})*))?(?:\\+[0-9A-Za-z-]+(?:\\.[0-9A-Za-z-]+)*)?$`);
 
 export function validateTrain(raw = {}) {
   for (const key of Object.keys(raw)) {
     if (!TRAIN_KEYS.has(key)) throw new ConfigError(`unknown train key "${key}"`);
   }
-  const minimum = raw.minimum ?? {};
+  const minimum = raw.minimum === undefined ? {} : raw.minimum;
   if (minimum === null || typeof minimum !== 'object' || Array.isArray(minimum)) throw new ConfigError('train.minimum must be an object');
   for (const [id, version] of Object.entries(minimum)) {
     if (!COMPONENT_ID.test(id)) throw new ConfigError(`train.minimum: bad component id "${id}"`);
@@ -42,7 +45,25 @@ export function compareVersions(a, b) {
   if (pa[4] === pb[4]) return 0;
   if (pa[4] === undefined) return 1;
   if (pb[4] === undefined) return -1;
-  return pa[4] < pb[4] ? -1 : 1;
+  return comparePrerelease(pa[4].split('.'), pb[4].split('.'));
+}
+
+// Identifier by identifier: numbers numerically and below text, text in ASCII
+// order, and a shorter list first when all else is equal.
+function comparePrerelease(a, b) {
+  for (let i = 0; i < Math.min(a.length, b.length); i += 1) {
+    const an = /^\d+$/.test(a[i]);
+    const bn = /^\d+$/.test(b[i]);
+    if (an && bn) {
+      const d = Number(a[i]) - Number(b[i]);
+      if (d !== 0) return d;
+    } else if (an !== bn) {
+      return an ? -1 : 1;
+    } else if (a[i] !== b[i]) {
+      return a[i] < b[i] ? -1 : 1;
+    }
+  }
+  return a.length - b.length;
 }
 
 // Returns a list of drift items; an empty list means the host is on the train.
