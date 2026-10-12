@@ -94,6 +94,37 @@ test('pages until maxTasks or a short page', async () => {
   assert.equal(calls.length, 2);
 });
 
+// Mutation-checked: removing the C1 range from stripControls makes this fail.
+test('C1 controls and bidi/format characters are stripped from task fields', async () => {
+  const tricky = String.fromCodePoint(0x85, 0x9b, 0x202e, 0x2066, 0x200b);
+  const evil = {
+    id: 'task-9', name: `a${tricky}b`, state: 'in_progress', html_url: `https://github.com/o/r/tasks/a${tricky}b`,
+    repository: { id: 99 }, created_at: '2026-10-11T10:00:00Z', updated_at: '2026-10-11T10:00:00Z',
+    artifacts: [{ provider: 'github', type: 'branch', data: { head_ref: `x${tricky}y`, base_ref: 'main' } }],
+  };
+  const records = await go(fakeFetch({
+    '/agents/tasks?per_page=100&page=1': { tasks: [evil] },
+    '/repositories/99': { full_name: `o/a${tricky}b` },
+  }));
+  const out = JSON.stringify(records);
+  for (const cp of [0x85, 0x9b, 0x202e, 0x2066, 0x200b]) {
+    assert.equal(out.includes(String.fromCodePoint(cp)), false, `U+${cp.toString(16)} is stripped`);
+  }
+  assert.equal(records[1].workload.title, 'ab');
+  assert.equal(records[1].workload.branch, 'xy');
+  assert.equal(records[1].workload.repo, 'o/ab');
+  assert.equal(records[1].workload.url, 'https://github.com/o/r/tasks/ab');
+});
+
+test('an absurd x-ratelimit-reset falls back instead of crashing', async () => {
+  const records = await go(fakeFetch({
+    '/agents/tasks': () => new Response('{}', { status: 429, headers: { 'x-ratelimit-reset': '1e20' } }),
+  }));
+  assert.equal(records.length, 1);
+  assert.match(records[0].error, /rate limited \(429\); try again later/);
+  assert.equal(records[0].reachable, true);
+});
+
 const failures = [
   ['401', () => new Response('{"message":"Bad credentials"}', { status: 401 }), /rejected the token \(401\)/, true],
   ['403', () => new Response('{}', { status: 403, headers: { 'x-ratelimit-remaining': '10' } }), /forbidden \(403\).*"Agent tasks" and "Metadata"/, true],
