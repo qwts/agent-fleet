@@ -17,10 +17,14 @@
     },
     "ssh-linux": {
       "systemdUnits": ["agent-bot-daemon", "agent-comms-broker"]
+    },
+    "github-copilot": {
+      "repos": []
     }
   },
   "hosts": [
     { "name": "mac-1", "provider": "ssh-mac", "target": "admin@mac-1.example" },
-    { "name": "vm-1", "provider": "ssh-linux", "target": "ubuntu@vm-1.example", "port": 22 }
+    { "name": "vm-1", "provider": "ssh-linux", "target": "ubuntu@vm-1.example", "port": 22 },
+    { "name": "copilot", "provider": "github-copilot" }
   ]
 }

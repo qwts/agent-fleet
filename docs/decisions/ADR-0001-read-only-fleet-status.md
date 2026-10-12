@@ -1,8 +1,7 @@
 # ADR-0001: Read-only fleet status, pulled over SSH, behind host providers
 
-**Status:** Accepted for v1 (owner decisions relayed in chat, 2026-10-11).
-The no-SSH cloud model and the Copilot provider in §6 are proposed and waiting
-for owner decisions.
+**Status:** Accepted (owner decisions relayed in chat, 2026-10-11). §6, the
+no-SSH cloud model and the Copilot token, was accepted the same day.
 **Date:** 2026-10-11
 
 ## Context
@@ -61,7 +60,7 @@ runtime. CI runs on GitHub-hosted `ubuntu-latest` and `macos-latest` only,
 with actions pinned by commit. Tests use a scratch `HOME` and a stubbed SSH
 runner; no test opens a real connection.
 
-## 6. Cloud: hosts with no SSH (proposed, not built)
+## 6. Cloud: hosts with no SSH
 
 ### What can be observed today
 
@@ -117,7 +116,9 @@ Official vendor documentation only; anything else is marked unknown.
   controls, and any API.
 - **Containers.** Not researched for v1; a later provider.
 
-### Owner decision: the no-SSH model
+### The no-SSH model
+
+The options the owner chose from:
 
 1. **Vendor-API pollers per provider (recommended to start).** The control Mac
    reads each vendor's list API with a read-only token and maps sessions into
@@ -133,14 +134,31 @@ Official vendor documentation only; anything else is marked unknown.
    inside, joined to the listing by repository and branch.
 4. **Do nothing for cloud yet.** The vendor UIs stay the only view.
 
-**Recommendation:** option 3, starting with option 1.
+**Decision (owner, 2026-10-11):** option 3, both, phased. Pollers come first,
+starting with the GitHub Copilot cloud agent; in-session push comes later.
+
+### The Copilot token
+
+**Decision (owner, 2026-10-11):** a fine-grained personal access token that
+the owner creates, with only read-only "Agent tasks" and "Metadata"
+permissions. It lives in the control Mac's login Keychain and is read at run
+time with `/usr/bin/security`. It is never in the config, never in the
+environment, and never logged, printed or stored by agent-fleet. GitHub App
+installation tokens, such as the agent bots', are not accepted by the agent
+tasks API. A user-token device flow and reusing the `gh` login were the other
+options; the first needs a new App, and the second has undocumented scopes for
+this API. The owner steps are in [docs/github-copilot.md](../github-copilot.md).
+
+The provider sends only `GET` requests. Each task becomes one record in the
+same report shape as a host, with its details in `workload`. The API is a
+public preview: its errors and rate limits are reported on the account record,
+never fatal.
 
 ### Roadmap
 
 1. **v1:** `ssh-mac`, `ssh-linux` (this record).
-2. **GitHub Copilot cloud agent:** first cloud provider, as a poller over the
-   agent tasks REST API. Its design and owner decisions (token kind and
-   storage, which repositories, preview API risk) come before any code.
+2. **GitHub Copilot cloud agent:** `github-copilot`, a poller over the agent
+   tasks REST API (built).
 3. **Cursor cloud agents and Devin:** pollers over their documented REST APIs.
 4. **Codex cloud:** poller over `codex cloud list --json`.
 5. **Claude Code cloud sessions:** push only, until a list API is documented.

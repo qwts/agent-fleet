@@ -10,6 +10,11 @@ function formatHost(host) {
   const head = `${host.name} (${host.provider})${host.status && host.status !== 'unreachable' ? `  [${host.status.toUpperCase()}]` : ''}`;
   if (!host.reachable) return `${head}  UNREACHABLE  ${host.error ?? ''}\n`.replace(/ +\n$/, '\n');
   const lines = [];
+  if (host.workload) return formatWorkload(head, host.workload);
+  if (!host.system?.os && !host.components?.length) {
+    // An API account record: reached, nothing to probe on it.
+    return `${head}${host.error ? `  error ${host.error}` : '  reachable'}\n`;
+  }
   const system = host.system ?? {};
   lines.push(`${head}  ${system.os ?? '?'} ${system.osVersion ?? '?'}  hostname ${system.hostname ?? '?'}`);
   if (host.error) lines.push(`  error      ${host.error} (partial report)`);
@@ -25,5 +30,13 @@ function formatHost(host) {
   if (host.persona) lines.push(`  persona    ${host.persona.recorded ? 'recorded' : 'not recorded'}`);
   for (const s of host.services ?? []) lines.push(`  service    ${s.id} ${s.state}`);
   for (const d of host.drift ?? []) lines.push(`  DRIFT      ${describeDrift(d)}`);
+  return `${lines.join('\n')}\n`;
+}
+
+function formatWorkload(head, w) {
+  const where = [w.repo, w.branch].filter(Boolean).join(' ');
+  const lines = [`${head}  ${w.state}${where ? `  ${where}` : ''}`];
+  if (w.title) lines.push(`  title      ${w.title}`);
+  if (w.url) lines.push(`  url        ${w.url}`);
   return `${lines.join('\n')}\n`;
 }

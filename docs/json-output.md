@@ -33,6 +33,7 @@ fields. A breaking change bumps `schemaVersion`.
       "profile": { "configFound": true, "applied": true, "unmanagedAuthors": true, "keydTeamId": true },
       "persona": { "recorded": true },
       "services": [{ "id": "com.example.agent-bot.daemon", "state": "loaded" }],
+      "workload": null,
       "drift": []
     },
     {
@@ -46,6 +47,7 @@ fields. A breaking change bumps `schemaVersion`.
       "profile": null,
       "persona": null,
       "services": [],
+      "workload": null,
       "drift": []
     }
   ]
@@ -70,6 +72,10 @@ fields. A breaking change bumps `schemaVersion`.
 - **`services[]`:** each configured launchd label (`loaded`, `not-loaded`,
   `unknown`) or systemd user unit (`active`, `inactive`, `failed`, …,
   `unknown`).
+- **`workload`:** `null` for a machine. For a record from an API provider,
+  the work it lists; for `github-copilot`, a `copilot-agent-task` (see
+  [github-copilot.md](github-copilot.md)). An API provider adds one record per
+  listed workload, so `hosts` can be longer than the config's host list.
 - **`drift[]`:** items with a `kind`:
   - `behind`: `component`, `source`, `version`, `minimum`
   - `missing`: `component`, `minimum` (only where the provider expects it)
