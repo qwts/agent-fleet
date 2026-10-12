@@ -4,8 +4,8 @@ Read-only status of an agent-runtime fleet — Macs and Linux VMs — pulled ove
 SSH from one control machine: versions, org profile, identity daemons, and
 drift from a release train. It changes nothing on any host.
 
-Status: early. Probes are in place; drift and the full JSON contract land in
-the next pull requests.
+Status: early. Probes and drift are in place; the full JSON contract lands in
+the next pull request.
 
 ## Usage
 
@@ -40,6 +40,25 @@ An unreachable host is reported, not fatal. Each host has one deadline
 (`ssh.hostTimeoutSeconds`), and hosts are probed in parallel
 (`ssh.concurrency`). "On PATH" means the `PATH` of a non-interactive SSH
 session, which can be shorter than a login shell's.
+
+## Drift and the release train
+
+`train` in the config is the release the fleet should be on:
+
+```json
+"train": {
+  "minimum": { "agent-bot": "0.10.62", "geniusbar": "0.1.71" },
+  "profileRequired": true,
+  "personaRequired": false,
+  "servicesRequired": true
+}
+```
+
+A host drifts when any copy of a component it reports (agent-bot from
+GeniusBar, Homebrew, the Linux bundle or `PATH`) is below its minimum, when a
+component its provider expects is missing (GeniusBar on Macs only), or when a
+required profile, persona or service is not in place. Each host gets a status:
+`ok`, `drift`, `partial` (it ran out of time), or `unreachable`.
 
 ## Safety contract
 
