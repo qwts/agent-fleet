@@ -29,7 +29,7 @@ async function probeHost(host, options, ssh, run) {
     const result = await run(host, argv, { timeoutMs });
     if (result.code === 255) {
       if (result.timedOut) throw new HostError(reached ? `timed out after ${ssh.hostTimeoutSeconds}s` : 'unreachable: timed out');
-      throw new HostError(`${reached ? 'connection lost' : 'unreachable'}: ${firstLine(result.stderr) || 'ssh failed'}`);
+      throw new HostError(`${reached ? 'connection lost' : 'unreachable'}: ${redactTarget(firstLine(result.stderr), host) || 'ssh failed'}`);
     }
     reached = true;
     return result;
@@ -42,6 +42,19 @@ async function probeHost(host, options, ssh, run) {
     if (error instanceof HostError || error instanceof ProbeNotAllowed) return { ...base, ...(reached ? partial : {}), reachable: reached, error: error.message };
     throw error;
   }
+}
+
+// ssh names the destination in its errors; the report never carries the
+// target from the config, so its user and host are replaced.
+export function redactTarget(text, host) {
+  const target = host.target ?? '';
+  if (!target) return text;
+  const at = target.lastIndexOf('@');
+  const user = at > 0 ? target.slice(0, at) : null;
+  const name = target.slice(at + 1);
+  let out = text.split(target).join(user ? '[user]@[host]' : '[host]');
+  if (user) out = out.split(`${user}@`).join('[user]@');
+  return out.split(name).join('[host]');
 }
 
 function firstLine(text) {

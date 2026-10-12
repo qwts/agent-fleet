@@ -40,7 +40,7 @@ fields. A breaking change bumps `schemaVersion`.
       "provider": "ssh-linux",
       "status": "unreachable",
       "reachable": false,
-      "error": "unreachable: ssh: connect to host vm-1.example port 22: Connection refused",
+      "error": "unreachable: ssh: connect to host [host] port 22: Connection refused",
       "system": { "os": null, "osVersion": null, "hostname": null },
       "components": [],
       "profile": null,
@@ -77,4 +77,5 @@ fields. A breaking change bumps `schemaVersion`.
   - `persona`
   - `service`: `service`, `state`
 
-The SSH target from the config is never in the report.
+The SSH target from the config is never in the report: in ssh's own error
+text, its user and host are replaced with `[user]` and `[host]`.

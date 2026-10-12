@@ -57,5 +57,6 @@ test('drift is structured, and no config value or ssh target leaks', async (t) =
   assert.deepEqual(vm.drift, [{ kind: 'behind', component: 'agent-bot', source: 'linux-bundle', version: '0.10.60', minimum: '0.10.62' }, { kind: 'profile', missing: ['unmanagedAuthors'] }]);
   const text = JSON.stringify(r);
   assert.doesNotMatch(text, /SECRET/);
-  assert.doesNotMatch(text, /studio\.example|vm\.example/);
+  for (const { target } of config.hosts) assert.ok(!text.includes(target), target);
+  assert.match(r.hosts.find((h) => h.name === 'gone').error, /^unreachable: ssh: connect to host \[host\] port 22/);
 });

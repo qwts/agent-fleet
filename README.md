@@ -26,7 +26,7 @@ mac-1 (ssh-mac)  [DRIFT]  macOS 15.6.1  hostname mac-1.lan
   service    com.example.agent-bot.daemon loaded
   DRIFT      agent-bot geniusbar 0.10.61 < 0.10.62
 
-vm-1 (ssh-linux)  UNREACHABLE  unreachable: ssh: connect to host vm-1.example port 22: Connection refused
+vm-1 (ssh-linux)  UNREACHABLE  unreachable: ssh: connect to host [host] port 22: Connection refused
 
 2 hosts: 1 drift, 1 unreachable
 ```

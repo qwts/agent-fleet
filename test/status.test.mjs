@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { validateConfig } from '../src/config.mjs';
-import { collectFleet } from '../src/status.mjs';
+import { collectFleet, redactTarget } from '../src/status.mjs';
 import { LINUX, MAC, fakeRun } from './helpers.mjs';
 
 const config = (hosts, ssh = {}) => validateConfig({ schemaVersion: 1, ssh, hosts });
@@ -11,8 +11,15 @@ test('an unreachable host is reported and the others still are', async () => {
   const run = fakeRun({ a: MAC, c: LINUX });
   const hosts = await collectFleet(config([mac('a'), mac('b'), { name: 'c', provider: 'ssh-linux', target: 'c.example' }]), { run });
   assert.deepEqual(hosts.map((h) => [h.name, h.reachable]), [['a', true], ['b', false], ['c', true]]);
-  assert.match(hosts[1].error, /^unreachable: ssh: connect to host b\.example/);
+  assert.match(hosts[1].error, /^unreachable: ssh: connect to host \[host\] port 22/);
   assert.equal(run.calls.filter((c) => c.host === 'b').length, 1, 'no further probes after the first fails');
+});
+
+test('ssh error text never carries the target', () => {
+  const host = { target: 'admin@mac-1.example' };
+  assert.equal(redactTarget('ssh: Could not resolve hostname mac-1.example: nodename', host), 'ssh: Could not resolve hostname [host]: nodename');
+  assert.equal(redactTarget('admin@mac-1.example: Permission denied (publickey).', host), '[user]@[host]: Permission denied (publickey).');
+  assert.equal(redactTarget('connect to host 203.0.113.9 port 22', { target: '203.0.113.9' }), 'connect to host [host] port 22');
 });
 
 test('hosts are probed in parallel, up to the concurrency limit', async () => {
