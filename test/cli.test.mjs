@@ -61,10 +61,32 @@ test('status probes reachable hosts and reports unreachable ones', async (t) => 
   const stub = fakeRun({ studio: MAC });
   const text = await run(['status'], { env, run: stub });
   assert.equal(text.code, 0);
-  assert.match(text.out, /studio \(ssh-mac\)  macOS 15\.6\.1  hostname studio\.lan/);
+  assert.match(text.out, /studio \(ssh-mac\)  \[OK\]  macOS 15\.6\.1  hostname studio\.lan/);
   assert.match(text.out, /agent-bot\s+homebrew\s+0\.10\.64/);
   assert.match(text.out, /profile\s+applied/);
   assert.match(text.out, /vm \(ssh-linux\)  UNREACHABLE  unreachable: /);
   const json = JSON.parse((await run(['status', '--json'], { env, run: stub })).out);
   assert.deepEqual(json.hosts.map((h) => h.reachable), [true, false]);
+});
+
+test('status flags drift from the train and summarises the fleet', async (t) => {
+  const { home, env } = scratchHome(t);
+  writeConfig(home, {
+    ...config,
+    train: { minimum: { 'agent-bot': '0.10.63', geniusbar: '0.1.71' }, profileRequired: true },
+  });
+  const { code, out } = await run(['status'], { env, run: fakeRun({ studio: MAC }) });
+  assert.equal(code, 0);
+  assert.match(out, /studio \(ssh-mac\)  \[DRIFT\]/);
+  assert.match(out, /DRIFT\s+agent-bot geniusbar 0\.10\.62 < 0\.10\.63/);
+  assert.doesNotMatch(out, /DRIFT\s+agent-bot homebrew/);
+  assert.match(out, /2 hosts: 1 drift, 1 unreachable\n$/);
+});
+
+test('a bad train is a config error', async (t) => {
+  const { home, env } = scratchHome(t);
+  writeConfig(home, { ...config, train: { minimum: { 'agent-bot': 'latest' } } });
+  const { code, err } = await run(['status'], { env });
+  assert.equal(code, 2);
+  assert.match(err, /train\.minimum\.agent-bot must be a version/);
 });

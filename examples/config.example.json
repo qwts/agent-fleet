@@ -5,6 +5,12 @@
     "hostTimeoutSeconds": 30,
     "concurrency": 8
   },
+  "train": {
+    "minimum": { "agent-bot": "0.10.62", "geniusbar": "0.1.71" },
+    "profileRequired": true,
+    "personaRequired": false,
+    "servicesRequired": true
+  },
   "providers": {
     "ssh-mac": {
       "launchdLabels": ["com.example.agent-bot.daemon", "com.example.agent-comms.broker"]

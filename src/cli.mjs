@@ -2,6 +2,7 @@ import { readFileSync } from 'node:fs';
 import { parseArgs } from 'node:util';
 import { ConfigError, configPath, loadConfig } from './config.mjs';
 import { createSshRunner } from './ssh.mjs';
+import { hostDrift, hostStatus, validateTrain } from './drift.mjs';
 import { collectFleet } from './status.mjs';
 import { formatText } from './format.mjs';
 
@@ -52,9 +53,11 @@ export async function main(argv, { env = process.env, stdout = process.stdout, s
   }
 
   let config;
+  let train;
   let hosts;
   try {
     config = await loadConfig(configPath({ env, explicit: values.config }));
+    train = validateTrain(config.train);
     hosts = await collectFleet(config, { run: run ?? createSshRunner({ ssh: config.ssh }) });
   } catch (error) {
     if (!(error instanceof ConfigError)) throw error;
@@ -62,7 +65,11 @@ export async function main(argv, { env = process.env, stdout = process.stdout, s
     return 2;
   }
 
-  const report = { schemaVersion: 1, hosts };
+  for (const host of hosts) {
+    host.drift = hostDrift(host, train);
+    host.status = hostStatus(host);
+  }
+  const report = { schemaVersion: 1, train, hosts };
   stdout.write(values.json ? `${JSON.stringify(report, null, 2)}\n` : formatText(report));
   return 0;
 }
