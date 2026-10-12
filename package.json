@@ -1,0 +1,17 @@
+{
+  "name": "agent-fleet",
+  "version": "0.1.0",
+  "description": "Read-only status of an agent-runtime fleet, pulled over SSH: versions, org profile, identity daemons and drift from a release train.",
+  "type": "module",
+  "license": "MIT",
+  "private": true,
+  "bin": {
+    "agent-fleet": "./bin/agent-fleet.mjs"
+  },
+  "engines": {
+    "node": ">=20"
+  },
+  "scripts": {
+    "test": "node --test test/*.test.mjs"
+  }
+}

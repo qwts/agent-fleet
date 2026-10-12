@@ -1,0 +1,12 @@
+{
+  "schemaVersion": 1,
+  "ssh": {
+    "connectTimeoutSeconds": 5,
+    "hostTimeoutSeconds": 30,
+    "concurrency": 8
+  },
+  "hosts": [
+    { "name": "mac-1", "provider": "ssh-mac", "target": "admin@mac-1.example" },
+    { "name": "vm-1", "provider": "ssh-linux", "target": "ubuntu@vm-1.example", "port": 22 }
+  ]
+}
