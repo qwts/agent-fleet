@@ -95,7 +95,7 @@ Each host has a provider, and every provider reports the same shape:
   for `docker` and `podman` — matched by exact-equality against the
   allowlist. Each runtime yields one `container-runtime` record in `workload`
   (`ok`, `stopped`, `absent`, or `unavailable`) plus one `container` record
-  per running container (image, state, status, creation time). On a Mac,
+  per container (id, image, state, status, creation time). On a Mac,
   list `docker` only when Docker Desktop is expected to be running:
   agent-fleet never starts it.
 - **`github-copilot`:** GitHub Copilot cloud agent tasks from the agent
@@ -156,7 +156,9 @@ required profile, persona or service is not in place. Each host gets a status:
 - The `github-copilot` provider sends only `GET` requests, and its token
   never appears in config, output or errors.
 - SSH is non-interactive: `BatchMode=yes`, a connect timeout, no TTY, no
-  stdin, and `StrictHostKeyChecking=accept-new` for first use only.
+  stdin, and `StrictHostKeyChecking=accept-new` for first use only. An SSH
+  exit of 255 is read as a lost or unreachable connection, never as a
+  command result.
 
 See [ADR-0001](docs/decisions/ADR-0001-read-only-fleet-status.md) for the
 decisions behind this, and for the roadmap to cloud hosts with no SSH

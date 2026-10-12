@@ -7,13 +7,17 @@ import { createSshRunner, sshArgs } from '../src/ssh.mjs';
 const host = { name: 'h', target: 'me@h.example', port: 2222 };
 const ssh = { connectTimeoutSeconds: 5 };
 
-function fakeChild({ code = 0, stdout = '', hang = false } = {}) {
+function fakeChild({ code = 0, stdout = '', stderr = '', stdoutChunks = null, stderrChunks = null, hang = false } = {}) {
   const child = new EventEmitter();
   child.stdout = new EventEmitter();
   child.stderr = new EventEmitter();
   child.killed = null;
   child.kill = (signal) => { child.killed = signal; setImmediate(() => child.emit('close', null)); };
-  if (!hang) setImmediate(() => { child.stdout.emit('data', stdout); child.emit('close', code); });
+  if (!hang) setImmediate(() => {
+    for (const chunk of stdoutChunks ?? [stdout]) child.stdout.emit('data', chunk);
+    for (const chunk of stderrChunks ?? (stderr ? [stderr] : [])) child.stderr.emit('data', chunk);
+    child.emit('close', code);
+  });
   return child;
 }
 
@@ -52,6 +56,27 @@ test('a probe past its timeout is killed and reported as ssh failure', async () 
   assert.equal(result.code, 255);
   assert.equal(result.timedOut, true);
   assert.equal(child.killed, 'SIGKILL');
+});
+
+test('stdout past the 1 MiB cap flags truncatedOutput', async () => {
+  const big = 'a'.repeat(600 * 1024);
+  const run = createSshRunner({ ssh, spawnImpl: () => fakeChild({ code: 0, stdoutChunks: [big, big, 'late bytes'] }) });
+  const result = await run(host, ['launchctl', 'list'], { timeoutMs: 1000 });
+  assert.equal(result.code, 0);
+  assert.equal(result.truncatedOutput, true);
+});
+
+test('stderr past the 1 MiB cap flags truncatedOutput', async () => {
+  const big = 'b'.repeat(600 * 1024);
+  const run = createSshRunner({ ssh, spawnImpl: () => fakeChild({ code: 1, stderrChunks: [big, big, 'late bytes'] }) });
+  const result = await run(host, ['launchctl', 'list'], { timeoutMs: 1000 });
+  assert.equal(result.truncatedOutput, true);
+});
+
+test('output under the cap carries no truncation flag', async () => {
+  const run = createSshRunner({ ssh, spawnImpl: () => fakeChild({ code: 0, stdout: '15.6\n' }) });
+  const result = await run(host, ['launchctl', 'list'], { timeoutMs: 1000 });
+  assert.equal(result.truncatedOutput ?? false, false);
 });
 
 test('a missing ssh binary is a failure, not a crash', async () => {

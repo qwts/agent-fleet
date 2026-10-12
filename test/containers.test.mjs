@@ -8,6 +8,7 @@ import { providerOptions } from '../src/providers/index.mjs';
 import { collect as collectLinux } from '../src/providers/ssh-linux.mjs';
 import { collect as collectMac } from '../src/providers/ssh-mac.mjs';
 import { buildReport } from '../src/report.mjs';
+import { sanitizeId } from '../src/sanitize.mjs';
 import { collectFleet } from '../src/status.mjs';
 import { LINUX, MAC, fakeRun } from './helpers.mjs';
 
@@ -87,6 +88,7 @@ test('ssh-mac reports a running docker daemon and its containers', async () => {
   assert.deepEqual(extra[1].workload, {
     kind: 'container',
     runtime: 'docker',
+    id: 'abcdef123456',
     image: 'img:latest',
     state: 'running',
     status: 'Up 2 hours',
@@ -143,6 +145,68 @@ test('oversized ps output, cut mid-row by the byte cap, is unavailable', async (
   assert.equal(extra.length, 1);
   assert.equal(extra[0].workload.state, 'unavailable');
   assert.equal(report.error, undefined);
+});
+
+test('a cap-truncated ps is unavailable even when its rows parse', async () => {
+  // The first rows of a cut stream are whole JSON, so they would parse; the
+  // truncatedOutput flag is what marks the listing incomplete.
+  const { exec } = stubbed({
+    ...LINUX,
+    [DOCKER_VERSION]: serverVersion,
+    [DOCKER_PS]: { code: 0, stdout: `${row(ID64)}\n`, stderr: '', timedOut: false, truncatedOutput: true },
+  });
+  const report = await collectLinux(exec, { containers: ['docker'] }, {}, { name: 'vm' });
+  const extra = report[EXTRA_RECORDS] ?? [];
+  assert.equal(extra.length, 1);
+  assert.equal(extra[0].workload.state, 'unavailable');
+  assert.equal(report.error, undefined);
+});
+
+test('ids failing the id pattern get distinct unknown-N names in row order', async () => {
+  const good = 'abcdef1234567890abcdef1234567890abcdef1234567890abcdef1234567890';
+  const { exec } = stubbed({
+    ...LINUX,
+    [DOCKER_VERSION]: serverVersion,
+    [DOCKER_PS]: `${row('not an id!')}\n${row(good)}\n${row('y'.repeat(300))}\n`,
+  });
+  const report = await collectLinux(exec, { containers: ['docker'] }, {}, { name: 'vm' });
+  const extra = report[EXTRA_RECORDS] ?? [];
+  assert.deepEqual(extra.map((r) => r.name), [
+    'vm/docker',
+    'vm/docker/unknown-1',
+    `vm/docker/${good.slice(0, 12)}`,
+    'vm/docker/unknown-2',
+  ]);
+  assert.deepEqual(extra.slice(1).map((r) => r.workload.id), ['unknown-1', good.slice(0, 12), 'unknown-2']);
+});
+
+test('container ids go through sanitizeId', async () => {
+  // BEL and bidi marks are stripped; the raw bytes must never reach the
+  // record name or the workload id.
+  const controlId = 'abc\x07def123456789';
+  const bidiId = 'ab\u200ecd0011223344';
+  const overlongId = `zz${'z'.repeat(300)}`;
+  assert.equal(sanitizeId(controlId), 'abcdef123456789');
+  assert.equal(sanitizeId(bidiId), 'abcd0011223344');
+  assert.equal(sanitizeId(overlongId), 'unknown');
+  const { exec } = stubbed({
+    ...LINUX,
+    [DOCKER_VERSION]: serverVersion,
+    [DOCKER_PS]: `${row(controlId)}\n${row(bidiId)}\n${row(overlongId)}\n`,
+  });
+  const report = await collectLinux(exec, { containers: ['docker'] }, {}, { name: 'vm' });
+  const extra = report[EXTRA_RECORDS] ?? [];
+  assert.deepEqual(extra.map((r) => r.name), [
+    'vm/docker',
+    'vm/docker/abcdef123456',
+    'vm/docker/abcd00112233',
+    'vm/docker/unknown-1',
+  ]);
+  for (const [record, raw] of [[extra[1], controlId], [extra[2], bidiId]]) {
+    assert.equal(record.workload.id, sanitizeId(raw).slice(0, 12));
+  }
+  assert.equal(extra[3].workload.id, 'unknown-1');
+  assert.ok(!extra.some((r) => r.name.includes('\x07') || r.name.includes('\u200e')));
 });
 
 test('at most 100 containers per runtime, extras flagged truncated', async () => {
