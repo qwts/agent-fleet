@@ -8,9 +8,11 @@ const URL = /^https?:\/\/[^\s]+$/i;
 const MAX_TEXT = 500;
 const MAX_URL = 2000;
 
-// C0/C1 controls carry ESC sequences; drop them everywhere.
+// C0/C1 controls carry ESC sequences, and bidi/format characters reorder or
+// hide text in terminals; drop them everywhere.
 export function stripControls(value) {
-  return value.replace(/[\x00-\x1f\x7f-\x9f]/g, '');
+  // eslint-disable-next-line no-control-regex, no-misleading-character-class
+  return value.replace(/[\x00-\x1f\x7f-\x9f\u200b-\u200f\u2028-\u202e\u2060-\u2069\ufeff]/g, '');
 }
 
 export function sanitizeText(value) {

@@ -83,6 +83,14 @@ function client({ base, token, fetchImpl, deadline }) {
   };
 }
 
+// x-ratelimit-reset is epoch seconds; an absurd value must not crash
+// Date.toISOString with a RangeError.
+function resetTime(reset) {
+  const ms = reset * 1000;
+  if (!Number.isFinite(ms) || Math.abs(ms) > 8.64e15) return null;
+  return new Date(ms).toISOString();
+}
+
 // Fixed messages per status; the response body is never echoed.
 export function describeFailure(path, response) {
   const header = (name) => response.headers?.get?.(name) ?? null;
@@ -90,7 +98,8 @@ export function describeFailure(path, response) {
   const retryAfter = Number(header('retry-after'));
   const reset = Number(header('x-ratelimit-reset'));
   if (status === 429 || (status === 403 && retryAfter > 0)) {
-    const until = retryAfter > 0 ? `retry after ${retryAfter}s` : reset > 0 ? `resets at ${new Date(reset * 1000).toISOString()}` : 'try again later';
+    const resetAt = reset > 0 ? resetTime(reset) : null;
+    const until = retryAfter > 0 ? `retry after ${retryAfter}s` : resetAt !== null ? `resets at ${resetAt}` : 'try again later';
     return `Cursor API rate limited (${status}); ${until}`;
   }
   switch (status) {
@@ -109,9 +118,11 @@ async function listAgents(api, maxAgents) {
   const agents = [];
   let cursor = null;
   let truncated = false;
-  // At most one page per 100 agents, plus one: a server that keeps handing
-  // out nextCursor past that is looping, not listing.
-  const maxPages = Math.ceil(maxAgents / Math.min(100, maxAgents)) + 1;
+  // A generous fixed bound on pages; the collect deadline still bounds wall
+  // time. Stops that end listing early (empty page, repeated cursor, no
+  // nextCursor) clear the cursor, so a cursor left over afterwards means a
+  // page is still pending and the result is truncated.
+  const maxPages = 1000;
   const seen = new Set();
   for (let page = 0; page < maxPages; page += 1) {
     const left = maxAgents - agents.length;
@@ -128,17 +139,24 @@ async function listAgents(api, maxAgents) {
     const body = await api(path);
     const batch = Array.isArray(body?.items) ? body.items.filter((a) => a && typeof a.id === 'string') : null;
     if (batch === null) throw Object.assign(new ApiError('Cursor API /v1/agents: unexpected response shape'), { reached: true });
-    if (batch.length === 0) break;
+    if (batch.length === 0) {
+      cursor = null;
+      break;
+    }
     agents.push(...batch.slice(0, limit));
     const next = typeof body?.nextCursor === 'string' && body.nextCursor.length > 0 ? body.nextCursor : null;
     if (next === null) {
       cursor = null;
       break;
     }
-    if (seen.has(next)) break;
+    if (seen.has(next)) {
+      cursor = null;
+      break;
+    }
     seen.add(next);
     cursor = next;
   }
+  truncated ||= cursor !== null;
   return { agents, truncated };
 }
 
