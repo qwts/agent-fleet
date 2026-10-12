@@ -95,7 +95,7 @@ Official vendor documentation only; anything else is marked unknown.
   setup scripts run in the environment, and agent-phase internet is off by
   default with a domain allowlist
   ([docs](https://learn.chatgpt.com/docs/cloud/internet-access)). Unknown: a
-  REST list API, and branch fields.
+  REST list API, and branch fields. Deferred per the roadmap note.
 - **Claude Code cloud sessions.** No documented list API; sessions show at
   claude.ai/code and in `claude --teleport`. Setup scripts, repo hooks and
   MCP run in the session, with network levels up to a custom allowlist
@@ -160,8 +160,8 @@ never fatal.
 2. **GitHub Copilot cloud agent:** `github-copilot`, a poller over the agent
    tasks REST API (built).
 3. **Cursor cloud agents and Devin (built):** pollers over their documented REST APIs.
-4. **Codex cloud (next):** poller over `codex cloud list --json`.
-5. **Claude Code cloud sessions:** push only, until a list API is documented.
+4. **Codex cloud (deferred):** poller over `codex cloud list --json`, deferred (owner decision, 2026-10-12) until OpenAI documents a REST list API with a scoped read-only token. The only documented machine surface is the CLI under the owner's ChatGPT sign-in; nothing in agent-fleet may use that session, there is no scoped read token, and the task status enum is undocumented.
+5. **Claude Code cloud sessions (next):** push only, until a list API is documented.
 6. **Grok Bot, dots, Muse:** UI only until an API is documented; revisit push
    if user tooling can be installed.
 7. **Containers.**
