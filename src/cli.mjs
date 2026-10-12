@@ -1,4 +1,4 @@
-import { readFileSync } from 'node:fs';
+import { existsSync, readFileSync } from 'node:fs';
 import { parseArgs } from 'node:util';
 import { ConfigError, configPath, loadConfig } from './config.mjs';
 import { createSshRunner } from './ssh.mjs';
@@ -82,13 +82,15 @@ async function discover(values, { env, stdout, stderr, browseImpl }) {
     stderr.write('agent-fleet: --seconds must be an integer from 1 to 60\n');
     return 2;
   }
-  // The config is optional here: it only marks names already configured.
+  // The config is optional here: it only marks names already configured. A
+  // missing default file is fine; a broken one is still an error.
   let hosts = [];
-  try {
-    hosts = (await loadConfig(configPath({ env, explicit: values.config }))).hosts;
-  } catch (error) {
-    if (!(error instanceof ConfigError)) throw error;
-    if (values.config) {
+  const file = configPath({ env, explicit: values.config });
+  if (values.config || existsSync(file)) {
+    try {
+      hosts = (await loadConfig(file)).hosts;
+    } catch (error) {
+      if (!(error instanceof ConfigError)) throw error;
       stderr.write(`agent-fleet: ${error.message}\n`);
       return 2;
     }
@@ -104,5 +106,5 @@ async function discover(values, { env, stdout, stderr, browseImpl }) {
     for (const s of found) stdout.write(`${s.configured ? 'configured' : 'new       '}  ${s.name}  (${s.target})\n`);
     if (found.some((s) => !s.configured)) stdout.write('\nThese are suggestions only. Add a host to your config yourself to probe it.\n');
   }
-  return error && names.length === 0 ? 1 : 0;
+  return error ? 1 : 0;
 }

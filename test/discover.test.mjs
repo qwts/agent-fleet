@@ -47,6 +47,18 @@ test('browse stops dns-sd after the timeout and parses what it saw', async () =>
   assert.equal(killed, 'SIGTERM');
 });
 
+test('a browse command that fails is reported as an error', async () => {
+  const spawnImpl = () => {
+    const child = new EventEmitter();
+    child.stdout = new EventEmitter();
+    child.kill = () => {};
+    setImmediate(() => child.emit('close', 1));
+    return child;
+  };
+  const result = await browse({ platform: 'linux', seconds: 5, spawnImpl });
+  assert.deepEqual(result, { names: [], error: 'avahi-browse exited with 1' });
+});
+
 test('discover prints suggestions and never touches the config', async (t) => {
   const { home, env } = scratchHome(t);
   const file = writeConfig(home, { schemaVersion: 1, hosts: [{ name: 'mac-1', provider: 'ssh-mac', target: 'mac-1.local' }] });
@@ -70,5 +82,16 @@ test('discover works without a config and reports a failed browse', async (t) =>
   const failed = await run(['discover'], { env, browseImpl: async () => ({ names: [], error: 'spawn dns-sd ENOENT' }) });
   assert.equal(failed.code, 1);
   assert.match(failed.err, /Bonjour browse failed/);
+  const partial = await run(['discover'], { env, browseImpl: async () => ({ names: ['mac-1'], error: 'dns-sd exited with 1' }) });
+  assert.equal(partial.code, 1, 'partial suggestions do not hide a failure');
+  assert.match(partial.out, /mac-1/);
   assert.equal((await run(['discover', '--seconds', '0'], { env })).code, 2);
+});
+
+test('discover reports a broken default config instead of ignoring it', async (t) => {
+  const { home, env } = scratchHome(t);
+  writeConfig(home, '{broken');
+  const { code, err } = await run(['discover'], { env, browseImpl: async () => assert.fail('must not browse') });
+  assert.equal(code, 2);
+  assert.match(err, /not valid JSON/);
 });

@@ -27,10 +27,13 @@ export function browse({ platform = process.platform, seconds = 3, spawnImpl = s
       clearTimeout(timer);
       resolve({ names: parse(out), error: error ?? null });
     };
-    const timer = setTimeout(() => { child.kill('SIGTERM'); finish(); }, seconds * 1000);
+    let stopped = false;
+    const timer = setTimeout(() => { stopped = true; child.kill('SIGTERM'); finish(); }, seconds * 1000);
     child.stdout.on('data', (d) => { if (out.length < 1024 * 1024) out += d; });
     child.on('error', (error) => finish(`${bin}: ${error.message}`));
-    child.on('close', () => finish());
+    // Stopping dns-sd ourselves is the normal end; any other non-zero exit
+    // is a failed browse.
+    child.on('close', (code) => finish(!stopped && code !== 0 ? `${bin} exited with ${code ?? 'a signal'}` : undefined));
   });
 }
 
