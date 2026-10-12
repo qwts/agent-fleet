@@ -50,13 +50,17 @@ async function probeRuntime(exec, hostName, provider, runtime) {
   const server = versionServer(version.stdout);
   if (server === true) {
     const ps = await exec([runtime, 'ps', '--all', '--no-trunc', '--format', '{{json .}}']);
+    // A cap-truncated ps stream may still parse (its first rows are whole),
+    // but the listing is incomplete, so no partial row may be reported.
+    if (ps.truncatedOutput) return [runtimeRecord(hostName, provider, runtime, 'unavailable')];
     const rows = parsePsOutput(ps.stdout);
     if (rows === null) return [runtimeRecord(hostName, provider, runtime, 'unavailable')];
     const truncated = rows.length > MAX_CONTAINERS;
+    let unknownSeen = 0;
     return [
       runtimeRecord(hostName, provider, runtime, 'ok', truncated),
       ...rows.slice(0, MAX_CONTAINERS).flatMap((row) => {
-        const record = containerRecord(hostName, provider, runtime, row);
+        const record = containerRecord(hostName, provider, runtime, row, () => `unknown-${++unknownSeen}`);
         return record === null ? [] : [record];
       }),
     ];
@@ -84,8 +88,9 @@ export function versionServer(text) {
 
 // The ps format prints one JSON object per line, but a whole-output array is
 // accepted too. Returns the row list, or null when the output is unparsable.
-// Oversized output is left to the SSH runner's byte cap, which truncates the
-// stream and therefore fails parsing here.
+// Oversized output never reaches parsing: the SSH runner flags a stream cut
+// by its byte cap with truncatedOutput, which probeRuntime reads as
+// unavailable without touching the partial rows.
 export function parsePsOutput(text) {
   const raw = String(text ?? '');
   if (raw.trim() === '') return [];
@@ -121,11 +126,14 @@ function runtimeRecord(hostName, provider, runtime, state, truncated = false) {
 
 // Rows that are not objects, or name no id, are skipped. Every string goes
 // through the sanitizer; createdAt stays a plain string because the runtimes
-// print local timestamps, never ISO.
-function containerRecord(hostName, provider, runtime, row) {
+// print local timestamps, never ISO. A sanitized id that fails the id
+// pattern would collide on 'unknown', so each listing numbers them
+// unknown-1, unknown-2, … in row order; valid ids stay the first 12 chars.
+function containerRecord(hostName, provider, runtime, row, nextUnknownId = () => 'unknown') {
   if (!row || typeof row !== 'object' || Array.isArray(row)) return null;
   if (typeof row.ID !== 'string' || row.ID === '') return null;
-  const shortId = sanitizeId(row.ID).slice(0, 12);
+  const clean = sanitizeId(row.ID);
+  const shortId = clean === 'unknown' ? nextUnknownId() : clean.slice(0, 12);
   return {
     name: `${hostName}/${runtime}/${shortId}`,
     provider,
@@ -134,6 +142,7 @@ function containerRecord(hostName, provider, runtime, row) {
     workload: {
       kind: 'container',
       runtime,
+      id: shortId,
       image: sanitizeText(row.Image),
       state: sanitizeText(row.State),
       status: sanitizeText(row.Status),

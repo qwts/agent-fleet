@@ -23,8 +23,10 @@ export function sshArgs(host, { connectTimeoutSeconds }, argv) {
   return args;
 }
 
-// Returns run(host, argv, { timeoutMs }) -> { code, stdout, stderr, timedOut }.
-// code 255 is ssh's own failure: the host was not reached.
+// Returns run(host, argv, { timeoutMs }) -> { code, stdout, stderr, timedOut,
+// truncatedOutput? }. code 255 is ssh's own failure: the host was not
+// reached. truncatedOutput is present and true only when a stream reached the
+// MAX_OUTPUT cap and more data arrived, so the output is incomplete.
 export function createSshRunner({ ssh, spawnImpl = spawn, sshBin = 'ssh' }) {
   return async function run(host, argv, { timeoutMs }) {
     assertAllowed(argv);
@@ -33,6 +35,7 @@ export function createSshRunner({ ssh, spawnImpl = spawn, sshBin = 'ssh' }) {
       let stdout = '';
       let stderr = '';
       let timedOut = false;
+      let truncatedOutput = false;
       let child;
       try {
         child = spawnImpl(sshBin, args, { stdio: ['ignore', 'pipe', 'pipe'], env: { ...process.env, SSH_ASKPASS_REQUIRE: 'never' } });
@@ -41,14 +44,14 @@ export function createSshRunner({ ssh, spawnImpl = spawn, sshBin = 'ssh' }) {
         return;
       }
       const timer = setTimeout(() => { timedOut = true; child.kill('SIGKILL'); }, timeoutMs);
-      child.stdout.on('data', (d) => { if (stdout.length < MAX_OUTPUT) stdout += d; });
-      child.stderr.on('data', (d) => { if (stderr.length < MAX_OUTPUT) stderr += d; });
+      child.stdout.on('data', (d) => { if (stdout.length >= MAX_OUTPUT) truncatedOutput = true; else stdout += d; });
+      child.stderr.on('data', (d) => { if (stderr.length >= MAX_OUTPUT) truncatedOutput = true; else stderr += d; });
       let settled = false;
       const finish = (code) => {
         if (settled) return;
         settled = true;
         clearTimeout(timer);
-        resolve({ code: timedOut ? 255 : (code ?? 255), stdout, stderr, timedOut });
+        resolve({ code: timedOut ? 255 : (code ?? 255), stdout, stderr, timedOut, ...(truncatedOutput ? { truncatedOutput: true } : {}) });
       };
       child.on('error', (error) => { stderr += error.message; finish(255); });
       child.on('close', finish);
