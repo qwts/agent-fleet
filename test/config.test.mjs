@@ -49,6 +49,13 @@ test('rejects bad configs with a ConfigError', () => {
   for (const raw of bad) assert.throws(() => validateConfig(raw), ConfigError, JSON.stringify(raw));
 });
 
+test('inherited property names are not mistaken for known keys', () => {
+  for (const key of ['toString', 'constructor', 'hasOwnProperty', '__proto__']) {
+    const raw = JSON.parse(`{"schemaVersion":1,"hosts":[],"ssh":{"${key}":5}}`);
+    assert.throws(() => validateConfig(raw), /unknown ssh key/, key);
+  }
+});
+
 test('loadConfig reports a missing file and bad JSON as ConfigError', async (t) => {
   const { home } = scratchHome(t);
   await assert.rejects(loadConfig(path.join(home, 'none.json')), /no config at/);

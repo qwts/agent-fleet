@@ -54,7 +54,7 @@ export function validateConfig(raw) {
   if (raw.ssh !== undefined) {
     if (!isObject(raw.ssh)) throw new ConfigError('ssh must be an object');
     for (const [key, value] of Object.entries(raw.ssh)) {
-      if (!(key in DEFAULT_SSH)) throw new ConfigError(`unknown ssh key "${key}"`);
+      if (!Object.hasOwn(DEFAULT_SSH, key)) throw new ConfigError(`unknown ssh key "${key}"`);
       if (!Number.isInteger(value) || value < 1 || value > 600) throw new ConfigError(`ssh.${key} must be an integer from 1 to 600`);
       ssh[key] = value;
     }
