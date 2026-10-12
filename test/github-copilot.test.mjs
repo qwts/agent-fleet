@@ -141,6 +141,7 @@ test('config: copilot hosts take no target, and options are validated', () => {
   assert.throws(() => options({ maxTasks: 0 }), /maxTasks/);
   assert.throws(() => options({ maxTasks: '5' }), /integer/);
   assert.throws(() => options({ token: TOKEN }), /unknown key "token"/, 'the token never lives in config');
+  assert.throws(() => options({ toString: 'x' }), /unknown key "toString"/, 'inherited names are not keys');
 });
 
 test('status shows Copilot tasks in the same report shape and never prints the token', async (t) => {

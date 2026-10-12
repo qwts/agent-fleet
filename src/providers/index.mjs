@@ -19,7 +19,7 @@ export function providerOptions(name, raw = {}) {
   const { DEFAULTS } = providers[name];
   const options = { ...DEFAULTS };
   for (const [key, value] of Object.entries(raw)) {
-    if (!(key in DEFAULTS)) throw new ConfigError(`providers.${name}: unknown key "${key}"`);
+    if (!Object.hasOwn(DEFAULTS, key)) throw new ConfigError(`providers.${name}: unknown key "${key}"`);
     const want = Array.isArray(DEFAULTS[key]) ? 'array' : typeof DEFAULTS[key];
     const ok = want === 'array' ? Array.isArray(value) && value.every((v) => typeof v === 'string' && v.length > 0)
       : want === 'number' ? Number.isInteger(value)
