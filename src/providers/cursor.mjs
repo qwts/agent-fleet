@@ -5,6 +5,7 @@
 //
 // One config host becomes one account record plus one record per agent, all
 // in the same report shape as an SSH host; an agent's details go in `workload`.
+import { sanitizeId, sanitizeRepo, sanitizeText, sanitizeTimestamp, sanitizeUrl } from '../sanitize.mjs';
 import { TokenUnavailable, redact } from '../token.mjs';
 
 export const kind = 'api';
@@ -108,7 +109,11 @@ async function listAgents(api, maxAgents) {
   const agents = [];
   let cursor = null;
   let truncated = false;
-  for (;;) {
+  // At most one page per 100 agents, plus one: a server that keeps handing
+  // out nextCursor past that is looping, not listing.
+  const maxPages = Math.ceil(maxAgents / Math.min(100, maxAgents)) + 1;
+  const seen = new Set();
+  for (let page = 0; page < maxPages; page += 1) {
     const left = maxAgents - agents.length;
     if (left <= 0) {
       // The cap is reached while another page remains: say so on the
@@ -123,9 +128,16 @@ async function listAgents(api, maxAgents) {
     const body = await api(path);
     const batch = Array.isArray(body?.items) ? body.items.filter((a) => a && typeof a.id === 'string') : null;
     if (batch === null) throw Object.assign(new ApiError('Cursor API /v1/agents: unexpected response shape'), { reached: true });
+    if (batch.length === 0) break;
     agents.push(...batch.slice(0, limit));
-    cursor = typeof body?.nextCursor === 'string' && body.nextCursor.length > 0 ? body.nextCursor : null;
-    if (cursor === null) break;
+    const next = typeof body?.nextCursor === 'string' && body.nextCursor.length > 0 ? body.nextCursor : null;
+    if (next === null) {
+      cursor = null;
+      break;
+    }
+    if (seen.has(next)) break;
+    seen.add(next);
+    cursor = next;
   }
   return { agents, truncated };
 }
@@ -133,22 +145,23 @@ async function listAgents(api, maxAgents) {
 function agentRecord(host, agent) {
   const repos = Array.isArray(agent.repos) ? agent.repos : [];
   const repo = repos.find((r) => r && typeof r.url === 'string') ?? {};
+  const id = sanitizeId(agent.id);
   return {
-    name: `${host.name}/${agent.id}`,
+    name: `${host.name}/${id}`,
     provider: host.provider,
     reachable: true,
     error: null,
     workload: {
       kind: 'cursor-agent',
-      id: agent.id,
-      title: typeof agent.name === 'string' ? agent.name : null,
+      id,
+      title: sanitizeText(agent.name),
       state: STATES.has(agent.status) ? agent.status : 'unknown',
-      repo: typeof repo.url === 'string' ? repo.url : null,
-      branch: typeof repo.startingRef === 'string' ? repo.startingRef : null,
-      url: typeof agent.url === 'string' ? agent.url : null,
+      repo: sanitizeRepo(repo.url),
+      branch: sanitizeText(repo.startingRef),
+      url: sanitizeUrl(agent.url),
       runtime: null,
-      createdAt: agent.createdAt ?? null,
-      updatedAt: agent.updatedAt ?? null,
+      createdAt: sanitizeTimestamp(agent.createdAt),
+      updatedAt: sanitizeTimestamp(agent.updatedAt),
     },
   };
 }

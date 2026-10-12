@@ -6,7 +6,7 @@ import { providerOptions } from '../src/providers/index.mjs';
 import { TokenUnavailable } from '../src/token.mjs';
 import { run, scratchHome, writeConfig } from './helpers.mjs';
 
-const TOKEN = '[REDACTED]';
+const TOKEN = 'crsr_TESTTOKEN0123456789';
 const host = { name: 'cursor', provider: 'cursor' };
 const tokenSource = async () => TOKEN;
 
@@ -85,6 +85,79 @@ test('reaching maxAgents while another page remains records truncation instead o
   assert.equal(records.length, 4, 'account record plus 3 agents');
   assert.equal(records[0].workload.truncated, true);
   assert.match(records[0].workload.title, /more remain/);
+});
+
+test('an empty page stops pagination without another request', async () => {
+  const calls = [];
+  const records = await go(fakeFetch({
+    '/v1/agents?limit=5': { items: [{ id: 'bc-a', status: 'IDLE' }, { id: 'bc-b', status: 'IDLE' }], nextCursor: 'page-2' },
+    '/v1/agents?limit=3&cursor=page-2': { items: [], nextCursor: 'page-3' },
+    '/v1/agents': () => assert.fail('an empty page must stop pagination'),
+  }, calls), { maxAgents: 5 });
+  assert.equal(records.length, 3, 'account record plus 2 agents');
+  assert.equal(calls.length, 2);
+});
+
+test('a repeated nextCursor stops pagination instead of looping', async () => {
+  const calls = [];
+  const records = await go(fakeFetch({
+    '/v1/agents?limit=5': { items: [{ id: 'bc-a', status: 'IDLE' }], nextCursor: 'loop' },
+    '/v1/agents?limit=4&cursor=loop': { items: [{ id: 'bc-b', status: 'IDLE' }], nextCursor: 'loop' },
+  }, calls), { maxAgents: 5 });
+  assert.equal(records.length, 3, 'account record plus 2 agents');
+  assert.equal(calls.length, 2, 'the repeated cursor is not followed');
+});
+
+test('pagination stops at the page cap when the server always has another page', async () => {
+  const calls = [];
+  const fetchImpl = async (url, init) => {
+    calls.push(url);
+    const n = calls.length;
+    const items = [{ id: `bc-cap-${n}-a`, status: 'IDLE' }, { id: `bc-cap-${n}-b`, status: 'IDLE' }];
+    return new Response(JSON.stringify({ items, nextCursor: `cap-${n}` }), { status: 200, headers: { 'content-type': 'application/json' } });
+  };
+  const records = await go(fetchImpl, { maxAgents: 5 });
+  assert.equal(calls.length, 2, 'ceil(5/5)+1 pages at most');
+  assert.equal(records.length, 5, 'account record plus 4 agents');
+});
+
+test('a page with more items than requested stays capped at maxAgents', async () => {
+  const many = Array.from({ length: 10 }, (_, i) => ({ id: `bc-over-${i}`, status: 'ACTIVE', createdAt: '2026-10-11T10:00:00Z' }));
+  const calls = [];
+  const records = await go(fakeFetch({ '/v1/agents?limit=3': { items: many } }, calls), { maxAgents: 3 });
+  assert.equal(records.length, 4, 'account record plus 3 agents');
+  assert.equal(records[0].workload, null, 'no nextCursor, so nothing is truncated');
+  assert.equal(calls.length, 1);
+});
+
+test('maxAgents=1000 bounds a server that always has another page', async () => {
+  const calls = [];
+  const fetchImpl = async (url) => {
+    calls.push(url);
+    const n = calls.length;
+    const items = Array.from({ length: 100 }, (_, i) => ({ id: `bc-k-${n}-${i}`, status: 'IDLE', createdAt: '2026-10-11T10:00:00Z' }));
+    return new Response(JSON.stringify({ items, nextCursor: `k-${n}` }), { status: 200, headers: { 'content-type': 'application/json' } });
+  };
+  const records = await go(fetchImpl, { maxAgents: 1000 });
+  assert.ok(calls.length <= 11, `at most ceil(1000/100)+1 pages, got ${calls.length}`);
+  assert.ok(records.length <= 1001, 'account record plus at most 1000 agents');
+  assert.equal(records.length, 1001, 'ten full pages fill the bound');
+});
+
+test('untrusted agent fields are sanitized before output', async () => {
+  const evil = {
+    id: '../../etc', name: 'fix\x1b]0;pwned\x07stuff', status: 'ACTIVE', url: 'javascript:alert(1)',
+    createdAt: '2026-10-11T10:00:00Z; rm -rf', updatedAt: 12345,
+    repos: [{ url: 'javascript:alert(2)', startingRef: '\x1b[2Jbranch' }],
+  };
+  const records = await go(fakeFetch({ '/v1/agents?limit=100': { items: [evil] } }));
+  const out = JSON.stringify(records);
+  assert.doesNotMatch(out, /\x1b|javascript:/);
+  assert.equal(records[1].name, 'cursor/unknown', 'an unsafe id is not used in the record name');
+  assert.deepEqual(records[1].workload, {
+    kind: 'cursor-agent', id: 'unknown', title: 'fix]0;pwnedstuff', state: 'ACTIVE', repo: null,
+    branch: '[2Jbranch', url: null, runtime: null, createdAt: null, updatedAt: null,
+  });
 });
 
 const failures = [

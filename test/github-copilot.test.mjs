@@ -174,3 +174,23 @@ test('status shows Copilot tasks in the same report shape and never prints the t
   assert.match(text.out, /copilot\/task-1 \(github-copilot\)  \[OK\]  in_progress  o\/r copilot\/fix-flaky/);
   for (const out of [json.out, json.err, text.out, text.err]) assert.doesNotMatch(out, /TESTTOKEN/);
 });
+
+test('untrusted task fields are sanitized before output', async () => {
+  const evil = {
+    id: '../evil', name: '\x1b]0;pwned\x07', state: 'in_progress', html_url: 'javascript:alert(1)',
+    repository: { id: 99 }, created_at: 'yesterday', updated_at: '2026-10-11T10:00:00Z',
+    artifacts: [{ provider: 'github', type: 'branch', data: { head_ref: '\x1b[2Jx', base_ref: 'main' } }],
+  };
+  const records = await go(fakeFetch({
+    '/agents/tasks?per_page=100&page=1': { tasks: [evil] },
+    '/repositories/99': { full_name: 'o/e\x1bil' },
+  }));
+  const out = JSON.stringify(records);
+  assert.doesNotMatch(out, /\x1b|javascript:/);
+  assert.equal(records[1].name, 'copilot/unknown', 'an unsafe id is not used in the record name');
+  assert.deepEqual(records[1].workload, {
+    kind: 'copilot-agent-task', id: 'unknown', title: ']0;pwned', state: 'in_progress', repo: 'o/eil',
+    branch: '[2Jx', baseBranch: 'main', pullRequestId: null, url: null,
+    runtime: null, createdAt: null, updatedAt: '2026-10-11T10:00:00Z',
+  });
+});
