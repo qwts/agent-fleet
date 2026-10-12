@@ -35,6 +35,17 @@ vm-1 (ssh-linux)  UNREACHABLE  unreachable: ssh: connect to host [host] port 22:
 [docs/json-output.md](docs/json-output.md). `status` exits 0 whenever it could
 produce a report, drift or not, and 2 for usage or config errors.
 
+## Discover
+
+```sh
+node bin/agent-fleet.mjs discover [--json] [--seconds 3]
+```
+
+Browses Bonjour `_ssh._tcp` adverts on the local network for a few seconds
+(`dns-sd` on macOS, `avahi-browse` on Linux) and lists the names it saw,
+marking those already in your config. It only suggests: it never edits the
+config and never connects to a host.
+
 ## Config
 
 ```json
