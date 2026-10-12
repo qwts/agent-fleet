@@ -87,6 +87,9 @@ test('reaching maxAgents while another page remains records truncation instead o
   assert.match(records[0].workload.title, /more remain/);
 });
 
+// Mutation-checked: removing only the empty-page break makes a third request
+// (which 404s here), so this test fails without that stop while the page cap
+// stays in place.
 test('an empty page stops pagination without another request', async () => {
   const calls = [];
   const records = await go(fakeFetch({
@@ -95,9 +98,13 @@ test('an empty page stops pagination without another request', async () => {
     '/v1/agents': () => assert.fail('an empty page must stop pagination'),
   }, calls), { maxAgents: 5 });
   assert.equal(records.length, 3, 'account record plus 2 agents');
-  assert.equal(calls.length, 2);
+  assert.equal(calls.length, 2, 'far below the 1000-page cap: the stop fired, not the cap');
+  assert.equal(records[0].workload, null, 'a clean stop is not truncation');
 });
 
+// Mutation-checked: removing only the repeated-cursor break makes a third
+// request (which 404s here), so this test fails without that stop while the
+// page cap stays in place.
 test('a repeated nextCursor stops pagination instead of looping', async () => {
   const calls = [];
   const records = await go(fakeFetch({
@@ -105,20 +112,36 @@ test('a repeated nextCursor stops pagination instead of looping', async () => {
     '/v1/agents?limit=4&cursor=loop': { items: [{ id: 'bc-b', status: 'IDLE' }], nextCursor: 'loop' },
   }, calls), { maxAgents: 5 });
   assert.equal(records.length, 3, 'account record plus 2 agents');
-  assert.equal(calls.length, 2, 'the repeated cursor is not followed');
+  assert.equal(calls.length, 2, 'far below the 1000-page cap: the stop fired, not the cap');
+  assert.equal(records[0].workload, null, 'a clean stop is not truncation');
+});
+
+test('small pages with endless cursors end truncated at maxAgents, not silently short', async () => {
+  const calls = [];
+  const fetchImpl = async (url) => {
+    calls.push(url);
+    const n = calls.length;
+    const items = [{ id: `bc-small-${n}-a`, status: 'IDLE' }, { id: `bc-small-${n}-b`, status: 'IDLE' }];
+    return new Response(JSON.stringify({ items, nextCursor: `small-${n}` }), { status: 200, headers: { 'content-type': 'application/json' } });
+  };
+  const records = await go(fetchImpl, { maxAgents: 100 });
+  assert.equal(calls.length, 50, 'two agents per page fill 100 agents in 50 pages');
+  assert.equal(records.length, 101, 'account record plus 100 agents');
+  assert.equal(records[0].workload.truncated, true, 'a still-pending cursor means more remain');
 });
 
 test('pagination stops at the page cap when the server always has another page', async () => {
   const calls = [];
-  const fetchImpl = async (url, init) => {
+  const fetchImpl = async (url) => {
     calls.push(url);
     const n = calls.length;
-    const items = [{ id: `bc-cap-${n}-a`, status: 'IDLE' }, { id: `bc-cap-${n}-b`, status: 'IDLE' }];
+    const items = [{ id: `bc-cap-${n}`, status: 'IDLE' }];
     return new Response(JSON.stringify({ items, nextCursor: `cap-${n}` }), { status: 200, headers: { 'content-type': 'application/json' } });
   };
-  const records = await go(fetchImpl, { maxAgents: 5 });
-  assert.equal(calls.length, 2, 'ceil(5/5)+1 pages at most');
-  assert.equal(records.length, 5, 'account record plus 4 agents');
+  const records = await go(fetchImpl, { maxAgents: 1000 });
+  assert.equal(calls.length, 1000, 'the fixed page bound stops an endless server');
+  assert.equal(records.length, 1001, 'account record plus 1000 agents');
+  assert.equal(records[0].workload.truncated, true, 'a still-pending cursor means more remain');
 });
 
 test('a page with more items than requested stays capped at maxAgents', async () => {
@@ -142,6 +165,7 @@ test('maxAgents=1000 bounds a server that always has another page', async () => 
   assert.ok(calls.length <= 11, `at most ceil(1000/100)+1 pages, got ${calls.length}`);
   assert.ok(records.length <= 1001, 'account record plus at most 1000 agents');
   assert.equal(records.length, 1001, 'ten full pages fill the bound');
+  assert.equal(records[0].workload.truncated, true, 'a still-pending cursor means more remain');
 });
 
 test('untrusted agent fields are sanitized before output', async () => {
@@ -158,6 +182,34 @@ test('untrusted agent fields are sanitized before output', async () => {
     kind: 'cursor-agent', id: 'unknown', title: 'fix]0;pwnedstuff', state: 'ACTIVE', repo: null,
     branch: '[2Jbranch', url: null, runtime: null, createdAt: null, updatedAt: null,
   });
+});
+
+// Mutation-checked: removing the C1 range from stripControls makes this fail.
+test('C1 controls and bidi/format characters are stripped from agent fields', async () => {
+  const tricky = String.fromCodePoint(0x85, 0x9b, 0x202e, 0x2066, 0x200b);
+  const evil = {
+    id: 'bc-ok', name: `a${tricky}b`, status: 'ACTIVE', url: `https://cursor.com/agents/a${tricky}b`,
+    createdAt: '2026-10-11T10:00:00Z', updatedAt: '2026-10-11T10:00:00Z',
+    repos: [{ url: `https://github.com/o/a${tricky}b`, startingRef: `x${tricky}y` }],
+  };
+  const records = await go(fakeFetch({ '/v1/agents?limit=100': { items: [evil] } }));
+  const out = JSON.stringify(records);
+  for (const cp of [0x85, 0x9b, 0x202e, 0x2066, 0x200b]) {
+    assert.equal(out.includes(String.fromCodePoint(cp)), false, `U+${cp.toString(16)} is stripped`);
+  }
+  assert.equal(records[1].workload.title, 'ab');
+  assert.equal(records[1].workload.branch, 'xy');
+  assert.equal(records[1].workload.repo, 'https://github.com/o/ab');
+  assert.equal(records[1].workload.url, 'https://cursor.com/agents/ab');
+});
+
+test('an absurd x-ratelimit-reset falls back instead of crashing', async () => {
+  const records = await go(fakeFetch({
+    '/v1/agents': () => new Response('{}', { status: 429, headers: { 'x-ratelimit-reset': '1e20' } }),
+  }));
+  assert.equal(records.length, 1);
+  assert.match(records[0].error, /rate limited \(429\); try again later/);
+  assert.equal(records[0].reachable, true);
 });
 
 const failures = [
@@ -201,6 +253,7 @@ test('config: cursor hosts take no target, and options are validated', () => {
   assert.throws(() => validateConfig({ schemaVersion: 1, hosts: [{ ...host, target: 'x.example' }] }), ConfigError);
   assert.throws(() => options({ apiBase: 'http://api.cursor.com' }), /https URL/);
   assert.throws(() => options({ maxAgents: 0 }), /maxAgents/);
+  assert.throws(() => options({ maxAgents: 1001 }), /maxAgents/);
   assert.throws(() => options({ maxAgents: '5' }), /integer/);
   assert.throws(() => options({ token: TOKEN }), /unknown key "token"/, 'the token never lives in config');
   assert.throws(() => options({ toString: 'x' }), /unknown key "toString"/, 'inherited names are not keys');

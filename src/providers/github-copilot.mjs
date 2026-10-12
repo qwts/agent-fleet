@@ -100,6 +100,14 @@ function client({ base, token, fetchImpl, deadline }) {
   };
 }
 
+// x-ratelimit-reset is epoch seconds; an absurd value must not crash
+// Date.toISOString with a RangeError.
+function resetTime(reset) {
+  const ms = reset * 1000;
+  if (!Number.isFinite(ms) || Math.abs(ms) > 8.64e15) return null;
+  return new Date(ms).toISOString();
+}
+
 // Fixed messages per status; the response body is never echoed.
 export function describeFailure(path, response) {
   const header = (name) => response.headers?.get?.(name) ?? null;
@@ -108,7 +116,8 @@ export function describeFailure(path, response) {
   const reset = Number(header('x-ratelimit-reset'));
   const retryAfter = Number(header('retry-after'));
   if (status === 429 || (status === 403 && (remaining === '0' || retryAfter > 0))) {
-    const until = retryAfter > 0 ? `retry after ${retryAfter}s` : reset > 0 ? `resets at ${new Date(reset * 1000).toISOString()}` : 'try again later';
+    const resetAt = reset > 0 ? resetTime(reset) : null;
+    const until = retryAfter > 0 ? `retry after ${retryAfter}s` : resetAt !== null ? `resets at ${resetAt}` : 'try again later';
     return `GitHub API rate limited (${status}); ${until}`;
   }
   switch (status) {
