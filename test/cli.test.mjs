@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { run, scratchHome, writeConfig } from './helpers.mjs';
+import { MAC, fakeRun, run, scratchHome, writeConfig } from './helpers.mjs';
 
 const config = {
   schemaVersion: 1,
@@ -43,7 +43,7 @@ test('status lists the configured hosts', async (t) => {
   writeConfig(home, config);
   const text = await run(['status'], { env });
   assert.equal(text.code, 0);
-  assert.match(text.out, /studio\s+ssh-mac/);
+  assert.match(text.out, /studio \(ssh-mac\)  UNREACHABLE/);
   const json = await run(['status', '--json'], { env });
   assert.deepEqual(JSON.parse(json.out).hosts.map((h) => h.name), ['studio', 'vm']);
 });
@@ -53,4 +53,18 @@ test('--config overrides the default path', async (t) => {
   const file = writeConfig(home, config);
   const { code } = await run(['status', '--config', file], { env: { HOME: '/nonexistent' } });
   assert.equal(code, 0);
+});
+
+test('status probes reachable hosts and reports unreachable ones', async (t) => {
+  const { home, env } = scratchHome(t);
+  writeConfig(home, config);
+  const stub = fakeRun({ studio: MAC });
+  const text = await run(['status'], { env, run: stub });
+  assert.equal(text.code, 0);
+  assert.match(text.out, /studio \(ssh-mac\)  macOS 15\.6\.1  hostname studio\.lan/);
+  assert.match(text.out, /agent-bot\s+homebrew\s+0\.10\.64/);
+  assert.match(text.out, /profile\s+applied/);
+  assert.match(text.out, /vm \(ssh-linux\)  UNREACHABLE  unreachable: /);
+  const json = JSON.parse((await run(['status', '--json'], { env, run: stub })).out);
+  assert.deepEqual(json.hosts.map((h) => h.reachable), [true, false]);
 });

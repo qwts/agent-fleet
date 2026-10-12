@@ -5,6 +5,14 @@
     "hostTimeoutSeconds": 30,
     "concurrency": 8
   },
+  "providers": {
+    "ssh-mac": {
+      "launchdLabels": ["com.example.agent-bot.daemon", "com.example.agent-comms.broker"]
+    },
+    "ssh-linux": {
+      "systemdUnits": ["agent-bot-daemon", "agent-comms-broker"]
+    }
+  },
   "hosts": [
     { "name": "mac-1", "provider": "ssh-mac", "target": "admin@mac-1.example" },
     { "name": "vm-1", "provider": "ssh-linux", "target": "ubuntu@vm-1.example", "port": 22 }
