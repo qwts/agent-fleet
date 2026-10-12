@@ -80,11 +80,24 @@ Each host has a provider, and every provider reports the same shape:
 - **`ssh-mac`:** macOS version and hostname; GeniusBar's version and its
   bundled agent-bot (read from the app bundle); Homebrew's agent-bot (from the
   `opt` link); the agent-bot on `PATH` and where it resolves; launchd labels
-  you list in `providers.ssh-mac.launchdLabels`.
+  you list in `providers.ssh-mac.launchdLabels`; opt-in container runtimes
+  (see the shared containers bullet below).
 - **`ssh-linux`:** OS and hostname; the Linux bundle's agent-bot; the
   agent-bot on `PATH`; `systemctl --user is-active` for
   `providers.ssh-linux.systemdUnits` (default `agent-bot-daemon`,
-  `agent-comms-broker`).
+  `agent-comms-broker`); opt-in container runtimes (see the shared
+  containers bullet below).
+- **Containers (opt-in, both SSH providers):** `providers.ssh-mac.containers`
+  and `providers.ssh-linux.containers` list `docker` and/or `podman`
+  (default empty, meaning no container probing at all). Each listed runtime
+  is probed with four read-only commands only — `<runtime> version --format
+  '{{json .}}'` and `<runtime> ps --all --no-trunc --format '{{json .}}'`
+  for `docker` and `podman` — matched by exact-equality against the
+  allowlist. Each runtime yields one `container-runtime` record in `workload`
+  (`ok`, `stopped`, `absent`, or `unavailable`) plus one `container` record
+  per running container (image, state, status, creation time). On a Mac,
+  list `docker` only when Docker Desktop is expected to be running:
+  agent-fleet never starts it.
 - **`github-copilot`:** GitHub Copilot cloud agent tasks from the agent
   tasks REST API, one record per task with its state, repository, branch and
   pull request in `workload`. It reads a read-only token from the macOS
@@ -128,8 +141,12 @@ required profile, persona or service is not in place. Each host gets a status:
 ## Safety contract
 
 - Read-only. Probes may only read files and run `--version`,
-  `launchctl list`, `readlink`, `defaults read` and
-  `systemctl --user is-active`. Never `agent-bot doctor` or `bootstrap`,
+  `launchctl list`, `readlink`, `defaults read`,
+  `systemctl --user is-active`, and `docker`/`podman` in four fixed shapes
+  only (`version --format '{{json .}}'` and
+  `ps --all --no-trunc --format '{{json .}}'`, matched by exact argv
+  equality; see [ADR-0001](docs/decisions/ADR-0001-read-only-fleet-status.md)).
+  Never `agent-bot doctor` or `bootstrap`,
   `keyd`, `managed-machine`, `brew`, or anything that installs, writes or
   prompts.
 - Enforced by an allowlist (`src/allowlist.mjs`): every probe is an argv

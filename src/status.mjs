@@ -2,6 +2,7 @@
 // A host that cannot be reached, or runs out of time, is reported with an
 // error; it never stops the others.
 import { ProbeNotAllowed } from './allowlist.mjs';
+import { EXTRA_RECORDS } from './providers/containers.mjs';
 import { providerOptions, providers } from './providers/index.mjs';
 
 class HostError extends Error {}
@@ -24,7 +25,7 @@ export async function collectFleet(config, { run, fetchImpl, tokenSource }) {
       const provider = providers[item.host.provider];
       results[item.index] = provider.kind === 'api'
         ? await provider.collect(item.host, { options: options[item.host.provider], fetchImpl, tokenSource, deadline: Date.now() + config.ssh.hostTimeoutSeconds * 1000 })
-        : [await probeHost(item.host, options[item.host.provider], config.ssh, run)];
+        : await probeHost(item.host, options[item.host.provider], config.ssh, run);
     }
   };
   await Promise.all(Array.from({ length: Math.min(config.ssh.concurrency, queue.length) }, worker));
@@ -47,11 +48,22 @@ async function probeHost(host, options, ssh, run) {
     return result;
   };
   const partial = {};
+  // Container records collected under the symbol are sibling host records,
+  // not fields of this host; take them out before shaping either record.
+  const takeExtra = () => {
+    const extra = partial[EXTRA_RECORDS] ?? [];
+    delete partial[EXTRA_RECORDS];
+    return extra;
+  };
   try {
-    await providers[host.provider].collect(exec, options, partial);
-    return { ...base, reachable: true, ...partial };
+    await providers[host.provider].collect(exec, options, partial, host);
+    const extra = takeExtra();
+    return [{ ...base, reachable: true, ...partial }, ...extra];
   } catch (error) {
-    if (error instanceof HostError || error instanceof ProbeNotAllowed) return { ...base, ...(reached ? partial : {}), reachable: reached, error: error.message };
+    if (error instanceof HostError || error instanceof ProbeNotAllowed) {
+      const extra = reached ? takeExtra() : [];
+      return [{ ...base, ...(reached ? partial : {}), reachable: reached, error: error.message }, ...extra];
+    }
     throw error;
   }
 }

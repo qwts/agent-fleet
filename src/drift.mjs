@@ -70,6 +70,10 @@ function comparePrerelease(a, b) {
 // An unreachable host has no drift: its status says it was not seen.
 export function hostDrift(host, train) {
   if (!host.reachable) return [];
+  // Workload records (API listings, container runtimes and containers) are
+  // not machines, so the release train does not apply to them. Every API
+  // provider expects nothing, so this changes no existing record.
+  if (host.workload) return [];
   const drift = [];
   const components = host.components ?? [];
   const expected = providers[host.provider]?.expects ?? [];

@@ -19,6 +19,21 @@ const NAME_ARG = /^[A-Za-z0-9][A-Za-z0-9._@-]*$/;
 const isPath = (s) => PATH_ARG.test(s) && !s.split('/').includes('..');
 const isName = (s) => NAME_ARG.test(s);
 
+// Container inspection: four exact argv shapes, matched by whole-argv literal
+// equality. The `{{json .}}` argument carries braces that the general
+// SAFE_ARG gate below rejects, so these shapes are checked first — but only
+// as complete argv arrays, never per argument. No other docker/podman
+// invocation (exec, run, logs, inspect, pull, start, create, desktop, …)
+// matches, so nothing that launches, writes or prompts can slip through.
+const CONTAINER_SHAPES = [
+  ['docker', 'version', '--format', '{{json .}}'],
+  ['docker', 'ps', '--all', '--no-trunc', '--format', '{{json .}}'],
+  ['podman', 'version', '--format', '{{json .}}'],
+  ['podman', 'ps', '--all', '--no-trunc', '--format', '{{json .}}'],
+];
+const isContainerShape = (a) => Array.isArray(a) && CONTAINER_SHAPES.some((s) => s.length === a.length && s.every((v, i) => a[i] === v));
+const isExact = (shape) => (a) => Array.isArray(a) && shape.length === a.length && shape.every((v, i) => a[i] === v);
+
 // Each rule: [name, predicate over the whole argv].
 const RULES = [
   ['cat FILE', (a) => a.length === 2 && a[0] === 'cat' && isPath(a[1])],
@@ -29,9 +44,17 @@ const RULES = [
   ['systemctl --user is-active UNIT...', (a) => a.length >= 4 && a[0] === 'systemctl' && a[1] === '--user' && a[2] === 'is-active' && a.slice(3).every(isName)],
   ['command -v NAME', (a) => a.length === 3 && a[0] === 'command' && a[1] === '-v' && isName(a[2])],
   ['agent-bot|agent-comms --version', (a) => a.length === 2 && a[1] === '--version' && (isName(a[0]) || isPath(a[0])) && VERSIONED.has(a[0].split('/').pop())],
+  ['docker version --format {{json .}}', isExact(CONTAINER_SHAPES[0])],
+  ['docker ps --all --no-trunc --format {{json .}}', isExact(CONTAINER_SHAPES[1])],
+  ['podman version --format {{json .}}', isExact(CONTAINER_SHAPES[2])],
+  ['podman ps --all --no-trunc --format {{json .}}', isExact(CONTAINER_SHAPES[3])],
 ];
 
 export function assertAllowed(argv) {
+  // The four container shapes carry braces, so they are matched by exact
+  // literal equality before the SAFE_ARG gate, which is unchanged for
+  // everything else.
+  if (isContainerShape(argv)) return argv;
   if (!Array.isArray(argv) || argv.length === 0 || !argv.every((s) => typeof s === 'string' && s.length > 0 && s.length <= 512 && SAFE_ARG.test(s))) {
     throw new ProbeNotAllowed(`probe refused: ${JSON.stringify(argv)}`);
   }
