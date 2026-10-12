@@ -51,6 +51,12 @@ test('ssh-linux reports the bundle, systemd states and a partial profile', async
   assert.deepEqual(report.services, [{ id: 'agent-bot-daemon', state: 'active' }, { id: 'agent-comms-broker', state: 'inactive' }]);
 });
 
+test('os-release values may be single-quoted, double-quoted or bare', async () => {
+  const report = await collectLinux(execFor({ ...LINUX, 'cat /etc/os-release': "NAME='Debian GNU/Linux'\nVERSION_ID=12\n" }));
+  assert.equal(report.system.os, 'Debian GNU/Linux');
+  assert.equal(report.system.osVersion, '12');
+});
+
 test('a broken agent-bot config is reported without its contents', async () => {
   const report = await collectLinux(execFor({ ...LINUX, 'cat .config/agent-bot/config.json': '{"settings": SECRET' }));
   assert.equal(report.profile.applied, false);

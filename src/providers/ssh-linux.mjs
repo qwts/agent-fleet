@@ -10,9 +10,11 @@ export const DEFAULTS = Object.freeze({
 
 export const expects = Object.freeze(['agent-bot']);
 
-export async function collect(exec, options = {}) {
+// Fields are filled into `into` as probes return, so a host that runs out of
+// time partway still reports what was collected.
+export async function collect(exec, options = {}, into = {}) {
   const opts = { ...DEFAULTS, ...options };
-  const report = { system: {}, components: [], profile: null, persona: null, services: [] };
+  const report = Object.assign(into, { system: {}, components: [], profile: null, persona: null, services: [] });
 
   // The first probe doubles as the reachability check.
   const osRelease = await exec(['cat', '/etc/os-release']);
@@ -45,7 +47,7 @@ export function parseOsRelease(text) {
   const out = {};
   for (const line of text.split('\n')) {
     const match = /^([A-Z_]+)=(.*)$/.exec(line.trim());
-    if (match) out[match[1]] = match[2].replace(/^"(.*)"$/, '$1');
+    if (match) out[match[1]] = match[2].replace(/^(["'])(.*)\1$/, '$2');
   }
   return out;
 }

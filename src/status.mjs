@@ -34,11 +34,12 @@ async function probeHost(host, options, ssh, run) {
     reached = true;
     return result;
   };
+  const partial = {};
   try {
-    const report = await providers[host.provider].collect(exec, options);
-    return { ...base, reachable: true, ...report };
+    await providers[host.provider].collect(exec, options, partial);
+    return { ...base, reachable: true, ...partial };
   } catch (error) {
-    if (error instanceof HostError || error instanceof ProbeNotAllowed) return { ...base, reachable: reached, error: error.message };
+    if (error instanceof HostError || error instanceof ProbeNotAllowed) return { ...base, ...(reached ? partial : {}), reachable: reached, error: error.message };
     throw error;
   }
 }

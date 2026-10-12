@@ -10,9 +10,11 @@ export const DEFAULTS = Object.freeze({
 
 export const expects = Object.freeze(['agent-bot', 'geniusbar']);
 
-export async function collect(exec, options = {}) {
+// Fields are filled into `into` as probes return, so a host that runs out of
+// time partway still reports what was collected.
+export async function collect(exec, options = {}, into = {}) {
   const opts = { ...DEFAULTS, ...options };
-  const report = { system: {}, components: [], profile: null, persona: null, services: [] };
+  const report = Object.assign(into, { system: {}, components: [], profile: null, persona: null, services: [] });
 
   // The first probe doubles as the reachability check.
   const osVersion = await exec(['defaults', 'read', '/System/Library/CoreServices/SystemVersion', 'ProductVersion']);

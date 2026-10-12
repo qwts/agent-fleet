@@ -40,6 +40,9 @@ test('a host that runs out of time is reported with a partial result', async () 
   const hosts = await collectFleet(validateConfig({ schemaVersion: 1, providers: { 'ssh-mac': { launchdLabels: ['x'] } }, hosts: [mac('a')] }), { run });
   assert.equal(hosts[0].reachable, true);
   assert.match(hosts[0].error, /timed out after 30s/);
+  assert.equal(hosts[0].system.osVersion, '15.6.1', 'what was collected before the timeout is kept');
+  assert.equal(hosts[0].components.find((c) => c.source === 'homebrew').version, '0.10.64');
+  assert.equal(hosts[0].profile.applied, true);
 });
 
 test('each probe gets only the time left on the host deadline', async () => {
