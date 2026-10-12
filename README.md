@@ -4,9 +4,6 @@ Read-only status of an agent-runtime fleet — Macs and Linux VMs — pulled ove
 SSH from one control machine: versions, org profile, identity daemons, and
 drift from a release train. It changes nothing on any host.
 
-Status: early. Probes and drift are in place; the full JSON contract lands in
-the next pull request.
-
 ## Usage
 
 ```sh
@@ -15,6 +12,51 @@ cp examples/config.example.json ~/.config/agent-fleet/config.json   # then list 
 node bin/agent-fleet.mjs status
 node bin/agent-fleet.mjs status --json
 ```
+
+Text output, one block per host:
+
+```text
+mac-1 (ssh-mac)  [DRIFT]  macOS 15.6.1  hostname mac-1.lan
+  geniusbar  app          0.1.71
+  agent-bot  geniusbar    0.10.61
+  agent-bot  homebrew     0.10.64
+  agent-bot  path         0.10.64  -> /opt/homebrew/Cellar/agent-bot/0.10.64/bin/agent-bot
+  profile    applied
+  persona    recorded
+  service    com.example.agent-bot.daemon loaded
+  DRIFT      agent-bot geniusbar 0.10.61 < 0.10.62
+
+vm-1 (ssh-linux)  UNREACHABLE  unreachable: ssh: connect to host [host] port 22: Connection refused
+
+2 hosts: 1 drift, 1 unreachable
+```
+
+`--json` prints the same report as a stable, provider-neutral document; see
+[docs/json-output.md](docs/json-output.md). `status` exits 0 whenever it could
+produce a report, drift or not, and 2 for usage or config errors.
+
+## Config
+
+```json
+{
+  "schemaVersion": 1,
+  "ssh": { "connectTimeoutSeconds": 5, "hostTimeoutSeconds": 30, "concurrency": 8 },
+  "train": { "minimum": { "agent-bot": "0.10.62", "geniusbar": "0.1.71" }, "profileRequired": true },
+  "providers": {
+    "ssh-mac": { "launchdLabels": ["com.example.agent-bot.daemon"] },
+    "ssh-linux": { "systemdUnits": ["agent-bot-daemon", "agent-comms-broker"] }
+  },
+  "hosts": [
+    { "name": "mac-1", "provider": "ssh-mac", "target": "admin@mac-1.example" },
+    { "name": "vm-1", "provider": "ssh-linux", "target": "ubuntu@vm-1.example", "port": 22 }
+  ]
+}
+```
+
+Unknown keys are errors. `ssh-mac` also takes `geniusBarApp` and
+`homebrewPrefixes`; `ssh-linux` takes `bundlePrefix`. SSH keys, users and
+jump hosts come from your own `~/.ssh/config`; agent-fleet never handles a
+password or a key.
 
 The config file is `$AGENT_FLEET_CONFIG`, else
 `${XDG_CONFIG_HOME:-~/.config}/agent-fleet/config.json`, or `--config PATH`.
@@ -75,7 +117,8 @@ required profile, persona or service is not in place. Each host gets a status:
   stdin, and `StrictHostKeyChecking=accept-new` for first use only.
 
 See [ADR-0001](docs/decisions/ADR-0001-read-only-fleet-status.md) for the
-decisions behind this.
+decisions behind this, and for the roadmap to cloud hosts with no SSH
+(GitHub Copilot cloud agent first).
 
 ## Development
 
