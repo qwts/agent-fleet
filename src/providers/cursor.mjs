@@ -149,6 +149,13 @@ async function listAgents(api, maxAgents) {
       cursor = null;
       break;
     }
+    if (next.length > 1024) {
+      // An absurd cursor is not followed; the list continues beyond what we
+      // fetched, so say so instead of treating it as a clean end.
+      truncated = true;
+      cursor = null;
+      break;
+    }
     if (seen.has(next)) {
       cursor = null;
       break;
