@@ -2,7 +2,8 @@ import { readFileSync } from 'node:fs';
 import { parseArgs } from 'node:util';
 import { ConfigError, configPath, loadConfig } from './config.mjs';
 import { createSshRunner } from './ssh.mjs';
-import { hostDrift, hostStatus, validateTrain } from './drift.mjs';
+import { validateTrain } from './drift.mjs';
+import { buildReport } from './report.mjs';
 import { collectFleet } from './status.mjs';
 import { formatText } from './format.mjs';
 
@@ -20,7 +21,7 @@ The config file defaults to $AGENT_FLEET_CONFIG, else
 agent-fleet never changes anything on any host.
 `;
 
-export async function main(argv, { env = process.env, stdout = process.stdout, stderr = process.stderr, run } = {}) {
+export async function main(argv, { env = process.env, stdout = process.stdout, stderr = process.stderr, run, now = () => new Date() } = {}) {
   let parsed;
   try {
     parsed = parseArgs({
@@ -65,11 +66,7 @@ export async function main(argv, { env = process.env, stdout = process.stdout, s
     return 2;
   }
 
-  for (const host of hosts) {
-    host.drift = hostDrift(host, train);
-    host.status = hostStatus(host);
-  }
-  const report = { schemaVersion: 1, train, hosts };
+  const report = buildReport(hosts, { train, version: VERSION, now: now() });
   stdout.write(values.json ? `${JSON.stringify(report, null, 2)}\n` : formatText(report));
   return 0;
 }

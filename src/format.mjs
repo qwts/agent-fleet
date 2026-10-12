@@ -2,9 +2,7 @@
 import { describeDrift } from './drift.mjs';
 
 export function formatText(report) {
-  const counts = {};
-  for (const host of report.hosts) counts[host.status] = (counts[host.status] ?? 0) + 1;
-  const summary = ['ok', 'drift', 'partial', 'unreachable'].filter((k) => counts[k]).map((k) => `${counts[k]} ${k}`).join(', ');
+  const summary = ['ok', 'drift', 'partial', 'unreachable'].filter((k) => report.summary[k]).map((k) => `${report.summary[k]} ${k}`).join(', ');
   return `${report.hosts.map(formatHost).join('\n')}\n${report.hosts.length} host${report.hosts.length === 1 ? '' : 's'}: ${summary || 'none configured'}\n`;
 }
 
