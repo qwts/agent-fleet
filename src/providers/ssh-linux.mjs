@@ -1,6 +1,7 @@
 // Linux over SSH: cloud VMs and the headless agent-bot bundle under
 // systemd --user.
 import { packageVersion, probePathAgentBot, probePersona, probeProfile } from './common.mjs';
+import { collectContainers, EXTRA_RECORDS, validateContainers } from './containers.mjs';
 
 export const kind = 'ssh';
 
@@ -8,13 +9,20 @@ export const DEFAULTS = Object.freeze({
   // install.sh's default prefix, relative to HOME.
   bundlePrefix: '.local/share/agent-bot',
   systemdUnits: ['agent-bot-daemon', 'agent-comms-broker'],
+  // Container runtimes to inspect, read-only. Empty means no container
+  // probing at all.
+  containers: [],
 });
+
+export function validateOptions(options) {
+  return validateContainers(options);
+}
 
 export const expects = Object.freeze(['agent-bot']);
 
 // Fields are filled into `into` as probes return, so a host that runs out of
 // time partway still reports what was collected.
-export async function collect(exec, options = {}, into = {}) {
+export async function collect(exec, options = {}, into = {}, host = {}) {
   const opts = { ...DEFAULTS, ...options };
   const report = Object.assign(into, { system: {}, components: [], profile: null, persona: null, services: [] });
 
@@ -41,6 +49,10 @@ export async function collect(exec, options = {}, into = {}) {
     const states = result.stdout.trim().split('\n').map((s) => s.trim());
     const known = new Set(['active', 'inactive', 'failed', 'activating', 'deactivating', 'reloading']);
     report.services = opts.systemdUnits.map((id, i) => ({ id, state: known.has(states[i]) ? states[i] : 'unknown' }));
+  }
+  if (opts.containers.length > 0) {
+    const extra = (into[EXTRA_RECORDS] ??= []);
+    await collectContainers(exec, { hostName: host.name ?? 'unknown', provider: 'ssh-linux', runtimes: opts.containers }, extra);
   }
   return report;
 }

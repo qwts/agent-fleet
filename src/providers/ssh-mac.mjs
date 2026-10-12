@@ -1,5 +1,6 @@
 // macOS over SSH: GeniusBar's bundle, Homebrew's agent-bot, launchd.
 import { packageVersion, parseVersion, probePathAgentBot, probePersona, probeProfile } from './common.mjs';
+import { collectContainers, EXTRA_RECORDS, validateContainers } from './containers.mjs';
 
 export const kind = 'ssh';
 
@@ -8,13 +9,20 @@ export const DEFAULTS = Object.freeze({
   homebrewPrefixes: ['/opt/homebrew', '/usr/local'],
   // Site-specific launchd labels belong in the user config.
   launchdLabels: [],
+  // Container runtimes to inspect, read-only. Empty means no container
+  // probing at all.
+  containers: [],
 });
+
+export function validateOptions(options) {
+  return validateContainers(options);
+}
 
 export const expects = Object.freeze(['agent-bot', 'geniusbar']);
 
 // Fields are filled into `into` as probes return, so a host that runs out of
 // time partway still reports what was collected.
-export async function collect(exec, options = {}, into = {}) {
+export async function collect(exec, options = {}, into = {}, host = {}) {
   const opts = { ...DEFAULTS, ...options };
   const report = Object.assign(into, { system: {}, components: [], profile: null, persona: null, services: [] });
 
@@ -50,6 +58,12 @@ export async function collect(exec, options = {}, into = {}) {
     const list = await exec(['launchctl', 'list']);
     const loaded = list.code === 0 ? launchdLabels(list.stdout) : null;
     report.services = opts.launchdLabels.map((id) => ({ id, state: loaded === null ? 'unknown' : loaded.has(id) ? 'loaded' : 'not-loaded' }));
+  }
+  if (opts.containers.length > 0) {
+    // docker is checked with `command -v` first and never invoked blindly;
+    // nothing here launches a daemon.
+    const extra = (into[EXTRA_RECORDS] ??= []);
+    await collectContainers(exec, { hostName: host.name ?? 'unknown', provider: 'ssh-mac', runtimes: opts.containers, presenceCheck: ['docker'] }, extra);
   }
   return report;
 }

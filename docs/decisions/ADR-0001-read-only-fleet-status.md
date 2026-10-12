@@ -33,6 +33,14 @@ allowlist of probe commands that every command passes before it reaches
 `ssh`, and the allowlist has its own tests. Probes run in parallel with a
 timeout per host. An unreachable host is reported, not fatal.
 
+Container probing (built 2026-10-12, opt-in over the SSH providers) adds
+exactly four literal shapes to that allowlist, matched by whole-argv
+exact equality with the fixed format string `{{json .}}` — `docker version
+--format '{{json .}}'`, `docker ps --all --no-trunc --format '{{json .}}'`,
+`podman version --format '{{json .}}'`, and `podman ps --all --no-trunc
+--format '{{json .}}'`. No other docker/podman invocation matches, so
+nothing that launches, writes or prompts can pass.
+
 ### 3. Public repository: no site data in code
 
 The repository ships no host names, users, addresses or other site-specific
@@ -164,7 +172,7 @@ never fatal.
 5. **Claude Code cloud sessions (next):** push only, until a list API is documented.
 6. **Grok Bot, dots, Muse:** UI only until an API is documented; revisit push
    if user tooling can be installed.
-7. **Containers.**
+7. **Containers (built):** docker/podman over the SSH providers, opt-in.
 
 ## Consequences
 
