@@ -93,6 +93,10 @@ Each host has a provider, and every provider reports the same shape:
   record per agent with its state, repository, starting ref and timestamps
   in `workload`. It reads a read-only API key from the macOS Keychain;
   see [docs/cursor.md](docs/cursor.md).
+- **`devin`:** Devin sessions from the organizations sessions API, one
+  record per session with its state, status detail, first pull request URL
+  and timestamps in `workload`. It reads a read-only API key from the
+  macOS Keychain; see [docs/devin.md](docs/devin.md).
 - **SSH providers:** whether the org profile is applied (`settings.unmanagedAuthors`
   and `settings.keydTeamId` present in `~/.config/agent-bot/config.json`;
   presence only, never values) and whether an SOP persona is recorded.

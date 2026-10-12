@@ -9,7 +9,11 @@ class HostError extends Error {}
 // Each config host yields one or more host records: an SSH host one, an API
 // provider an account record plus one per workload it lists.
 export async function collectFleet(config, { run, fetchImpl, tokenSource }) {
-  const options = Object.fromEntries(Object.keys(providers).map((name) => [name, providerOptions(name, config.providers[name])]));
+  // Options are built only for providers the fleet actually uses: a provider
+  // with required options (such as devin's orgId) has invalid defaults, and
+  // must not break fleets that never touch it.
+  const used = new Set(config.hosts.map((host) => host.provider));
+  const options = Object.fromEntries([...used].map((name) => [name, providerOptions(name, config.providers[name])]));
   const queue = config.hosts.map((host, index) => ({ host, index }));
   const results = new Array(config.hosts.length);
   const worker = async () => {
