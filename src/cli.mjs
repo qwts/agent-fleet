@@ -1,6 +1,9 @@
 import { readFileSync } from 'node:fs';
 import { parseArgs } from 'node:util';
 import { ConfigError, configPath, loadConfig } from './config.mjs';
+import { createSshRunner } from './ssh.mjs';
+import { collectFleet } from './status.mjs';
+import { formatText } from './format.mjs';
 
 const VERSION = JSON.parse(readFileSync(new URL('../package.json', import.meta.url), 'utf8')).version;
 
@@ -16,7 +19,7 @@ The config file defaults to $AGENT_FLEET_CONFIG, else
 agent-fleet never changes anything on any host.
 `;
 
-export async function main(argv, { env = process.env, stdout = process.stdout, stderr = process.stderr } = {}) {
+export async function main(argv, { env = process.env, stdout = process.stdout, stderr = process.stderr, run } = {}) {
   let parsed;
   try {
     parsed = parseArgs({
@@ -49,22 +52,17 @@ export async function main(argv, { env = process.env, stdout = process.stdout, s
   }
 
   let config;
+  let hosts;
   try {
     config = await loadConfig(configPath({ env, explicit: values.config }));
+    hosts = await collectFleet(config, { run: run ?? createSshRunner({ ssh: config.ssh }) });
   } catch (error) {
     if (!(error instanceof ConfigError)) throw error;
     stderr.write(`agent-fleet: ${error.message}\n`);
     return 2;
   }
 
-  const report = {
-    schemaVersion: 1,
-    hosts: config.hosts.map((host) => ({ name: host.name, provider: host.provider, probed: false })),
-  };
-  if (values.json) {
-    stdout.write(`${JSON.stringify(report, null, 2)}\n`);
-  } else {
-    for (const host of report.hosts) stdout.write(`${host.name}  ${host.provider}  not probed\n`);
-  }
+  const report = { schemaVersion: 1, hosts };
+  stdout.write(values.json ? `${JSON.stringify(report, null, 2)}\n` : formatText(report));
   return 0;
 }
