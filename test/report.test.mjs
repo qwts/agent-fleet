@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { LINUX, MAC, fakeRun, run, scratchHome, writeConfig } from './helpers.mjs';
 
-const HOST_KEYS = ['name', 'provider', 'status', 'reachable', 'error', 'system', 'components', 'profile', 'persona', 'services', 'drift'];
+const HOST_KEYS = ['name', 'provider', 'status', 'reachable', 'error', 'system', 'components', 'profile', 'persona', 'services', 'workload', 'drift'];
 const COMPONENT_KEYS = ['id', 'source', 'version', 'path', 'resolved'];
 
 const config = {

@@ -6,17 +6,22 @@ import { providerOptions, providers } from './providers/index.mjs';
 
 class HostError extends Error {}
 
-export async function collectFleet(config, { run }) {
+// Each config host yields one or more host records: an SSH host one, an API
+// provider an account record plus one per workload it lists.
+export async function collectFleet(config, { run, fetchImpl, tokenSource }) {
   const options = Object.fromEntries(Object.keys(providers).map((name) => [name, providerOptions(name, config.providers[name])]));
   const queue = config.hosts.map((host, index) => ({ host, index }));
   const results = new Array(config.hosts.length);
   const worker = async () => {
     for (let item = queue.shift(); item; item = queue.shift()) {
-      results[item.index] = await probeHost(item.host, options[item.host.provider], config.ssh, run);
+      const provider = providers[item.host.provider];
+      results[item.index] = provider.kind === 'api'
+        ? await provider.collect(item.host, { options: options[item.host.provider], fetchImpl, tokenSource, deadline: Date.now() + config.ssh.hostTimeoutSeconds * 1000 })
+        : [await probeHost(item.host, options[item.host.provider], config.ssh, run)];
     }
   };
   await Promise.all(Array.from({ length: Math.min(config.ssh.concurrency, queue.length) }, worker));
-  return results;
+  return results.flat();
 }
 
 async function probeHost(host, options, ssh, run) {

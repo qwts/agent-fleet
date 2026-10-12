@@ -6,6 +6,7 @@ import { validateTrain } from './drift.mjs';
 import { browse, suggestions } from './discover.mjs';
 import { buildReport } from './report.mjs';
 import { collectFleet } from './status.mjs';
+import { keychainTokenSource } from './token.mjs';
 import { formatText } from './format.mjs';
 
 const VERSION = JSON.parse(readFileSync(new URL('../package.json', import.meta.url), 'utf8')).version;
@@ -24,7 +25,7 @@ agent-fleet never changes anything on any host. discover only suggests
 hosts seen over Bonjour (_ssh._tcp); it never adds them to the config.
 `;
 
-export async function main(argv, { env = process.env, stdout = process.stdout, stderr = process.stderr, run, now = () => new Date(), browseImpl = browse } = {}) {
+export async function main(argv, { env = process.env, stdout = process.stdout, stderr = process.stderr, run, now = () => new Date(), browseImpl = browse, fetchImpl = globalThis.fetch, tokenSource } = {}) {
   let parsed;
   try {
     parsed = parseArgs({
@@ -64,7 +65,7 @@ export async function main(argv, { env = process.env, stdout = process.stdout, s
   try {
     config = await loadConfig(configPath({ env, explicit: values.config }));
     train = validateTrain(config.train);
-    hosts = await collectFleet(config, { run: run ?? createSshRunner({ ssh: config.ssh }) });
+    hosts = await collectFleet(config, { run: run ?? createSshRunner({ ssh: config.ssh }), fetchImpl, tokenSource: tokenSource ?? keychainTokenSource() });
   } catch (error) {
     if (!(error instanceof ConfigError)) throw error;
     stderr.write(`agent-fleet: ${error.message}\n`);

@@ -65,5 +65,5 @@ test('loadConfig reports a missing file and bad JSON as ConfigError', async (t) 
 
 test('the shipped example config is valid', async () => {
   const config = await loadConfig(fileURLToPath(new URL('../examples/config.example.json', import.meta.url)));
-  assert.equal(config.hosts.length, 2);
+  assert.equal(config.hosts.length, 3);
 });

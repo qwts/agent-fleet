@@ -3,7 +3,9 @@
 import { readFile } from 'node:fs/promises';
 import path from 'node:path';
 
-export const PROVIDERS = Object.freeze(['ssh-mac', 'ssh-linux']);
+export const PROVIDERS = Object.freeze(['ssh-mac', 'ssh-linux', 'github-copilot']);
+// Providers reached over SSH need a target; API providers take none.
+const SSH_PROVIDERS = new Set(['ssh-mac', 'ssh-linux']);
 
 export const DEFAULT_SSH = Object.freeze({
   connectTimeoutSeconds: 5,
@@ -87,8 +89,12 @@ export function validateConfig(raw) {
     if (seen.has(host.name)) throw new ConfigError(`${where}: duplicate host name "${host.name}"`);
     seen.add(host.name);
     if (!PROVIDERS.includes(host.provider)) throw new ConfigError(`${where}.provider must be one of ${PROVIDERS.join(', ')}`);
-    if (typeof host.target !== 'string' || !SSH_TARGET.test(host.target) || host.target.startsWith('-')) {
-      throw new ConfigError(`${where}.target must be host or user@host`);
+    if (SSH_PROVIDERS.has(host.provider)) {
+      if (typeof host.target !== 'string' || !SSH_TARGET.test(host.target) || host.target.startsWith('-')) {
+        throw new ConfigError(`${where}.target must be host or user@host`);
+      }
+    } else if (host.target !== undefined || host.port !== undefined) {
+      throw new ConfigError(`${where}: provider ${host.provider} takes no target or port`);
     }
     if (host.port !== undefined && (!Number.isInteger(host.port) || host.port < 1 || host.port > 65535)) {
       throw new ConfigError(`${where}.port must be an integer from 1 to 65535`);

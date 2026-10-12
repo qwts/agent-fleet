@@ -42,6 +42,7 @@ function shapeHost(host, train) {
       : null,
     persona: host.persona ? { recorded: host.persona.recorded } : null,
     services: (host.services ?? []).map((s) => ({ id: s.id, state: s.state })),
+    workload: host.workload ?? null,
     drift,
   };
 }

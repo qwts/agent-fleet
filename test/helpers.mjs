@@ -19,8 +19,12 @@ export function writeConfig(home, config) {
   return file;
 }
 
-// Tests never reach a real ssh: without a stub every host is unreachable.
-export async function run(argv, { env, run: runner = fakeRun({}), ...deps } = {}) {
+// Tests never reach a real ssh, network or Keychain: without stubs every
+// host is unreachable, every request fails and there is no token.
+const noFetch = async () => { throw new Error('tests must stub fetch'); };
+const noToken = async () => { throw new Error('tests must stub the token source'); };
+
+export async function run(argv, { env, run: runner = fakeRun({}), fetchImpl = noFetch, tokenSource = noToken, ...deps } = {}) {
   let out = '';
   let err = '';
   const code = await main(argv, {
@@ -28,6 +32,8 @@ export async function run(argv, { env, run: runner = fakeRun({}), ...deps } = {}
     stdout: { write: (s) => { out += s; } },
     stderr: { write: (s) => { err += s; } },
     run: runner,
+    fetchImpl,
+    tokenSource,
     ...deps,
   });
   return { code, out, err };

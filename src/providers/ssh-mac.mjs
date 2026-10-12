@@ -1,6 +1,8 @@
 // macOS over SSH: GeniusBar's bundle, Homebrew's agent-bot, launchd.
 import { packageVersion, parseVersion, probePathAgentBot, probePersona, probeProfile } from './common.mjs';
 
+export const kind = 'ssh';
+
 export const DEFAULTS = Object.freeze({
   geniusBarApp: '/Applications/GeniusBar.app',
   homebrewPrefixes: ['/opt/homebrew', '/usr/local'],

@@ -75,7 +75,7 @@ Host names live only there; this repository ships none.
 
 ## What it reports
 
-Each host has a provider. Both v1 providers report the same shape:
+Each host has a provider, and every provider reports the same shape:
 
 - **`ssh-mac`:** macOS version and hostname; GeniusBar's version and its
   bundled agent-bot (read from the app bundle); Homebrew's agent-bot (from the
@@ -85,7 +85,11 @@ Each host has a provider. Both v1 providers report the same shape:
   agent-bot on `PATH`; `systemctl --user is-active` for
   `providers.ssh-linux.systemdUnits` (default `agent-bot-daemon`,
   `agent-comms-broker`).
-- **Both:** whether the org profile is applied (`settings.unmanagedAuthors`
+- **`github-copilot`:** GitHub Copilot cloud agent tasks from the agent
+  tasks REST API, one record per task with its state, repository, branch and
+  pull request in `workload`. It reads a read-only token from the macOS
+  Keychain; see [docs/github-copilot.md](docs/github-copilot.md).
+- **SSH providers:** whether the org profile is applied (`settings.unmanagedAuthors`
   and `settings.keydTeamId` present in `~/.config/agent-bot/config.json`;
   presence only, never values) and whether an SOP persona is recorded.
 
@@ -124,6 +128,8 @@ required profile, persona or service is not in place. Each host gets a status:
   that must match one allowed shape before it reaches `ssh`, and every
   argument is quoted. Only `agent-bot` and `agent-comms` may be asked for
   `--version`. Paths a host reports back are checked the same way before use.
+- The `github-copilot` provider sends only `GET` requests, and its token
+  never appears in config, output or errors.
 - SSH is non-interactive: `BatchMode=yes`, a connect timeout, no TTY, no
   stdin, and `StrictHostKeyChecking=accept-new` for first use only.
 

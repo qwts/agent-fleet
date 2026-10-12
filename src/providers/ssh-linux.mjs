@@ -2,6 +2,8 @@
 // systemd --user.
 import { packageVersion, probePathAgentBot, probePersona, probeProfile } from './common.mjs';
 
+export const kind = 'ssh';
+
 export const DEFAULTS = Object.freeze({
   // install.sh's default prefix, relative to HOME.
   bundlePrefix: '.local/share/agent-bot',
