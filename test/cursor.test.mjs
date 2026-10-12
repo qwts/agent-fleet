@@ -116,6 +116,16 @@ test('a repeated nextCursor stops pagination instead of looping', async () => {
   assert.equal(records[0].workload, null, 'a clean stop is not truncation');
 });
 
+test('an oversized nextCursor ends the list as truncated', async () => {
+  const calls = [];
+  const records = await go(fakeFetch({
+    '/v1/agents?limit=5': { items: [{ id: 'bc-a', status: 'IDLE' }], nextCursor: 'x'.repeat(1025) },
+  }, calls), { maxAgents: 5 });
+  assert.equal(records.length, 2, 'account record plus 1 agent');
+  assert.equal(calls.length, 1, 'the oversized cursor is never followed');
+  assert.equal(records[0].workload?.truncated, true);
+});
+
 test('small pages with endless cursors end truncated at maxAgents, not silently short', async () => {
   const calls = [];
   const fetchImpl = async (url) => {
