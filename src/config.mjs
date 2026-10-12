@@ -3,7 +3,7 @@
 import { readFile } from 'node:fs/promises';
 import path from 'node:path';
 
-export const PROVIDERS = Object.freeze(['ssh-mac', 'ssh-linux', 'github-copilot']);
+export const PROVIDERS = Object.freeze(['ssh-mac', 'ssh-linux', 'github-copilot', 'cursor']);
 // Providers reached over SSH need a target; API providers take none.
 const SSH_PROVIDERS = new Set(['ssh-mac', 'ssh-linux']);
 

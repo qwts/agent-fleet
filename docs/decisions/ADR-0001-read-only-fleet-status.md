@@ -159,7 +159,7 @@ never fatal.
 1. **v1:** `ssh-mac`, `ssh-linux` (this record).
 2. **GitHub Copilot cloud agent:** `github-copilot`, a poller over the agent
    tasks REST API (built).
-3. **Cursor cloud agents and Devin:** pollers over their documented REST APIs.
+3. **Cursor cloud agents (built) and Devin (next):** pollers over their documented REST APIs.
 4. **Codex cloud:** poller over `codex cloud list --json`.
 5. **Claude Code cloud sessions:** push only, until a list API is documented.
 6. **Grok Bot, dots, Muse:** UI only until an API is documented; revisit push
