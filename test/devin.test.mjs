@@ -181,6 +181,18 @@ test('pagination stops at the page cap when the server always has another page',
   assert.equal(records[0].workload.truncated, true, 'a still-pending cursor means more remain');
 });
 
+// Mutation-checked: replacing Math.min(200, left) with just left makes the
+// first request ask for first=1000, so this test fails without the page cap.
+test('the first page asks for at most 200 sessions even with maxAgents=1000', async () => {
+  const calls = [];
+  const records = await go(fakeFetch({
+    [`/v3/organizations/${ORG}/sessions?first=200`]: { items: [{ session_id: 'devin-a', status: 'running' }], end_cursor: null, has_next_page: false, total: 1 },
+  }, calls), { maxAgents: 1000 });
+  assert.equal(calls.length, 1);
+  assert.match(calls[0].url, /\?first=200$/, 'pages larger than 200 are never requested');
+  assert.equal(records.length, 2, 'account record plus 1 session');
+});
+
 test('a page with more items than requested stays capped at maxAgents', async () => {
   const many = Array.from({ length: 10 }, (_, i) => ({ session_id: `devin-over-${i}`, status: 'running', created_at: 1760090400 }));
   const calls = [];
@@ -255,7 +267,6 @@ const failures = [
   ['403', () => new Response('{}', { status: 403 }), /forbidden \(403\).*cannot list sessions/, true],
   ['rate limit', () => new Response('{}', { status: 429, headers: { 'retry-after': '60' } }), /rate limited \(429\); retry after 60s/, true],
   ['404', () => new Response('{}', { status: 404 }), /not found \(404\).*may have changed/, true],
-  ['409', () => new Response('{}', { status: 409 }), /conflict \(409\)/, true],
   ['422', () => new Response('{}', { status: 422 }), /rejected the request \(422\)/, true],
   ['500', () => new Response('{}', { status: 502 }), /API error \(502\); try again later/, true],
   ['not JSON', () => new Response('<html>', { status: 200 }), /response is not JSON/, true],

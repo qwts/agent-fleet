@@ -110,7 +110,6 @@ export function describeFailure(path, response) {
     case 401: return 'Devin API rejected the token (401): check it has not expired';
     case 403: return `Devin API forbidden (403) for ${path}: the token cannot list sessions`;
     case 404: return `Devin API not found (404) for ${path}: the organization or API path may have changed`;
-    case 409: return `Devin API conflict (409) for ${path}: the request conflicts with the session state`;
     case 400:
     case 422: return `Devin API rejected the request (${status}) for ${path}`;
     default: return status >= 500 ? `Devin API error (${status}); try again later` : `Devin API unexpected status ${status} for ${path}`;

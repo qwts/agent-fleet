@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { validateConfig } from '../src/config.mjs';
+import { ConfigError, validateConfig } from '../src/config.mjs';
 import { collectFleet, redactTarget } from '../src/status.mjs';
 import { LINUX, MAC, fakeRun } from './helpers.mjs';
 
@@ -50,6 +50,29 @@ test('a host that runs out of time is reported with a partial result', async () 
   assert.equal(hosts[0].system.osVersion, '15.6.1', 'what was collected before the timeout is kept');
   assert.equal(hosts[0].components.find((c) => c.source === 'homebrew').version, '0.10.64');
   assert.equal(hosts[0].profile.applied, true);
+});
+
+test('an SSH-only fleet still validates provider blocks no host uses', async () => {
+  const bad = [
+    [{ cursor: { token: 'secret' } }, /unknown key "token"/],
+    [{ devin: { orgId: 'bad' } }, /orgId/],
+    [{ devin: { orgId: 'org-test123', maxAgents: 5000 } }, /maxAgents/],
+  ];
+  for (const [providers, message] of bad) {
+    const cfg = validateConfig({ schemaVersion: 1, providers, hosts: [mac('a')] });
+    await assert.rejects(collectFleet(cfg, { run: () => assert.fail('bad options must fail before probing') }), (error) => {
+      assert.ok(error instanceof ConfigError);
+      assert.match(error.message, message);
+      return true;
+    });
+  }
+});
+
+test('an SSH-only fleet with no provider blocks loads fine', async () => {
+  const run = fakeRun({ a: MAC });
+  const hosts = await collectFleet(config([mac('a')]), { run });
+  assert.equal(hosts.length, 1);
+  assert.equal(hosts[0].reachable, true);
 });
 
 test('each probe gets only the time left on the host deadline', async () => {
