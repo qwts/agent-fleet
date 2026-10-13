@@ -2,6 +2,7 @@
 // and the component ids it expects; every provider returns the same report
 // shape, so adding one changes neither the config nor the output format.
 import { ConfigError } from '../config.mjs';
+import * as claudeCodeStatus from './claude-code-status.mjs';
 import * as cursor from './cursor.mjs';
 import * as devin from './devin.mjs';
 import * as githubCopilot from './github-copilot.mjs';
@@ -14,6 +15,7 @@ export const providers = Object.freeze({
   'github-copilot': githubCopilot,
   cursor,
   devin,
+  'claude-code-status': claudeCodeStatus,
 });
 
 // Merge a provider's config block over its defaults. Keys and types must match

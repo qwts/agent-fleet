@@ -174,6 +174,9 @@ never fatal.
    if user tooling can be installed.
 7. **Containers (built):** docker/podman over the SSH providers, opt-in.
 
+Update (trial in progress, 2026-10-13): item 5 is now a trial — see
+[ADR-0002](ADR-0002-claude-code-push-trial.md). The text above is unchanged.
+
 ## Consequences
 
 - The owner gets a fleet view without giving any tool write access to any
