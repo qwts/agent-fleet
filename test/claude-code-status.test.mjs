@@ -25,7 +25,11 @@ const status = (over = {}) => ({
   updated_at: '2026-10-12T11:55:00Z',
   ...over,
 });
-const branchList = (...names) => names.map((name, i) => ({ name, commit: { sha: `sha${i}` } }));
+// Branch shas must be hex (the provider skips anything else), so the helper
+// mints deterministic 40-char shas and tests address them by index.
+const hexSha = (i) => i.toString(16).padStart(40, '0');
+const commitStatus = (repo, i) => `/repos/${repo}/commits/${hexSha(i)}/status`;
+const branchList = (...names) => names.map((name, i) => ({ name, commit: { sha: hexSha(i) } }));
 
 // A stub GitHub API. routes maps a path (with query) to a body or a function.
 function fakeFetch(routes, calls = []) {
@@ -48,14 +52,14 @@ test('maps commit statuses to session records with read-only GETs', async () => 
   const calls = [];
   const records = await go(fakeFetch({
     '/repos/o/r/branches?per_page=100&page=1': branchList('feat-a', 'feat-b'),
-    '/repos/o/r/commits/sha0/status': {
+    [commitStatus('o/r', 0)]: {
       state: 'success',
       statuses: [
         status(),
         { context: 'other/ci', state: 'success', description: 'build ok', target_url: null, created_at: '2026-10-12T11:00:00Z' },
       ],
     },
-    '/repos/o/r/commits/sha1/status': { state: 'success', statuses: [status({ description: desc({ branch: 'feat-b', state: 'ended', seq: 9 }) })] },
+    [commitStatus('o/r', 1)]: { state: 'success', statuses: [status({ description: desc({ branch: 'feat-b', state: 'ended', seq: 9 }) })] },
   }, calls), { repos: ['o/r'] });
   assert.deepEqual(records.map((r) => r.name), ['cc', `cc/${SID}`]);
   assert.equal(records[0].reachable, true);
@@ -87,7 +91,7 @@ test('no repositories means an account record with a coverage note and no reques
 test('a clean poll with no sessions leaves a null workload', async () => {
   const records = await go(fakeFetch({
     '/repos/o/r/branches?per_page=100&page=1': branchList('feat-a'),
-    '/repos/o/r/commits/sha0/status': { state: 'success', statuses: [] },
+    [commitStatus('o/r', 0)]: { state: 'success', statuses: [] },
   }), { repos: ['o/r'] });
   assert.equal(records.length, 1);
   assert.equal(records[0].workload, null);
@@ -99,6 +103,7 @@ const badDescriptions = [
   ['session without prefix', 'v=1;s=abcdefgh1234;b=feat-a;st=working;n=3'],
   ['bad state', 'v=1;s=cse_abcdefgh1234;b=feat-a;st=running;n=3'],
   ['extra keys', 'v=1;s=cse_abcdefgh1234;b=feat-a;st=working;n=3;x=1'],
+  ['renamed key', 'v=1;x=cse_abcdefgh1234;b=feat-a;st=working;n=3'],
   ['missing key', 'v=1;s=cse_abcdefgh1234;b=feat-a;st=working'],
   ['wrong order', 's=cse_abcdefgh1234;v=1;b=feat-a;st=working;n=3'],
   ['negative seq', 'v=1;s=cse_abcdefgh1234;b=feat-a;st=working;n=-1'],
@@ -114,7 +119,7 @@ for (const [label, description] of badDescriptions) {
   test(`a ${label} description is skipped silently and never echoed`, async () => {
     const records = await go(fakeFetch({
       '/repos/o/r/branches?per_page=100&page=1': branchList('feat-a'),
-      '/repos/o/r/commits/sha0/status': {
+      [commitStatus('o/r', 0)]: {
         state: 'success',
         statuses: [status({ description }), { context: 'other/ci', state: 'success', description: 'SECRET-CTX-PAYLOAD' }],
       },
@@ -127,7 +132,7 @@ for (const [label, description] of badDescriptions) {
 test('duplicate sessions keep the status with the latest created_at', async () => {
   const records = await go(fakeFetch({
     '/repos/o/r/branches?per_page=100&page=1': branchList('feat-a'),
-    '/repos/o/r/commits/sha0/status': {
+    [commitStatus('o/r', 0)]: {
       state: 'success',
       statuses: [
         status({ description: desc({ state: 'working', seq: 3 }), created_at: '2026-10-12T11:55:00Z' }),
@@ -149,7 +154,7 @@ test('duplicate sessions keep the status with the latest created_at', async () =
 });
 
 test('branch pages use the remaining cap and stop at a short page', async () => {
-  const many = (n, from) => Array.from({ length: n }, (_, i) => ({ name: `b${from + i}`, commit: { sha: `s${from + i}` } }));
+  const many = (n, from) => Array.from({ length: n }, (_, i) => ({ name: `b${from + i}`, commit: { sha: hexSha(from + i) } }));
   const calls = [];
   const fetchImpl = fakeFetch({
     '/repos/o/r/branches?per_page=100&page=1': many(100, 0),
@@ -175,12 +180,85 @@ test('the branch cap truncates and skips later repositories', async () => {
   const calls = [];
   const records = await go(fakeFetch({
     '/repos/o/a/branches?per_page=2&page=1': branchList('a1', 'a2'),
-    '/repos/o/a/commits/sha0/status': { state: 'success', statuses: [] },
-    '/repos/o/a/commits/sha1/status': { state: 'success', statuses: [] },
+    [commitStatus('o/a', 0)]: { state: 'success', statuses: [] },
+    [commitStatus('o/a', 1)]: { state: 'success', statuses: [] },
     '/repos/o/b/branches': () => assert.fail('o/b is never polled once the cap is reached'),
   }, calls), { repos: ['o/a', 'o/b'], maxBranches: 2 });
   assert.deepEqual(records[0].workload, { kind: 'claude-code-account', reportedSessions: 0, truncated: true });
   assert.ok(!calls.some((c) => c.url.includes('/o/b/')), 'no request for the unpolled repo');
+});
+
+test('a branch page larger than requested is capped at perPage', async () => {
+  const calls = [];
+  const oversized = Array.from({ length: 5 }, (_, i) => ({ name: `c${i}`, commit: { sha: hexSha(i) } }));
+  const fetchImpl = fakeFetch({
+    '/repos/o/r/branches?per_page=2&page=1': oversized,
+    [commitStatus('o/r', 0)]: { state: 'success', statuses: [] },
+    [commitStatus('o/r', 1)]: { state: 'success', statuses: [] },
+  }, calls);
+  const records = await go(fetchImpl, { repos: ['o/r'], maxBranches: 2 });
+  assert.deepEqual(records[0].workload, { kind: 'claude-code-account', reportedSessions: 0, truncated: true });
+  const commits = calls.map((c) => c.url).filter((u) => u.includes('/commits/'));
+  assert.deepEqual(commits, [commitStatus('o/r', 0), commitStatus('o/r', 1)].map((p) => `https://api.github.com${p}`));
+});
+
+test('a branch with a non-hex sha is skipped and never fetched or echoed', async () => {
+  const calls = [];
+  const records = await go(fakeFetch({
+    '/repos/o/r/branches?per_page=100&page=1': [
+      { name: 'feat-a', commit: { sha: hexSha(0) } },
+      { name: 'evil', commit: { sha: 'SECRET-not-a-sha/../../x' } },
+    ],
+    [commitStatus('o/r', 0)]: { state: 'success', statuses: [status()] },
+  }, calls), { repos: ['o/r'] });
+  assert.equal(records.length, 2, 'account record plus the valid branch only');
+  assert.equal(records[1].workload.branch, 'feat-a');
+  assert.ok(!calls.some((c) => c.url.includes('SECRET')), 'no request carries the bad sha');
+  assert.doesNotMatch(JSON.stringify(records), /SECRET/);
+});
+
+test('a status fetch error never echoes the branch sha', async () => {
+  const records = await go(fakeFetch({
+    '/repos/o/r/branches?per_page=100&page=1': branchList('feat-a'),
+    [commitStatus('o/r', 0)]: () => new Response('{}', { status: 404 }),
+  }), { repos: ['o/r'] });
+  assert.equal(records.length, 1);
+  assert.match(records[0].error, /not found \(404\)/);
+  assert.match(records[0].error, /<sha>/);
+  assert.doesNotMatch(records[0].error, new RegExp(hexSha(0)));
+});
+
+test('staleness uses the latest response Date header as now, last seen wins', async () => {
+  const json = (body, date) => new Response(JSON.stringify(body), {
+    status: 200,
+    headers: { 'content-type': 'application/json', ...(date === undefined ? {} : { date }) },
+  });
+  // 29 minutes old: working against the injected now, idle against a server
+  // clock two minutes ahead. The branches Date matches the injected now, so
+  // only the later statuses Date can flip the verdict.
+  const created = iso(NOW - 29 * 60 * 1000);
+  const records = await go(fakeFetch({
+    '/repos/o/r/branches?per_page=100&page=1': () => json(branchList('feat-a'), iso(NOW)),
+    [commitStatus('o/r', 0)]: () => json(
+      { state: 'success', statuses: [status({ created_at: created })] },
+      iso(NOW + 2 * 60 * 1000),
+    ),
+  }), { repos: ['o/r'] });
+  assert.equal(records[1].workload.state, 'idle');
+  assert.equal(records[1].workload.reportedState, 'working');
+});
+
+test('an unparseable Date header falls back to the injected now', async () => {
+  const json = (body) => new Response(JSON.stringify(body), {
+    status: 200,
+    headers: { 'content-type': 'application/json', date: 'not a date' },
+  });
+  const records = await go(fakeFetch({
+    '/repos/o/r/branches?per_page=100&page=1': () => json(branchList('feat-a')),
+    [commitStatus('o/r', 0)]: () => json({ state: 'success', statuses: [status({ created_at: iso(NOW - 29 * 60 * 1000) })] }),
+  }), { repos: ['o/r'] });
+  assert.equal(records[1].workload.state, 'working');
+  assert.equal(records[1].workload.reportedState, undefined);
 });
 
 test('staleness follows injected now with reported/idle/stale/ended boundaries', async () => {
@@ -189,7 +267,7 @@ test('staleness follows injected now with reported/idle/stale/ended boundaries',
   const at = (ageMs, over) => status({ description: desc({ state: 'working', ...over }), created_at: iso(NOW - ageMs) });
   const runAt = async (ageMs, over) => go(fakeFetch({
     '/repos/o/r/branches?per_page=100&page=1': branchList('feat-a'),
-    '/repos/o/r/commits/sha0/status': { state: 'success', statuses: [at(ageMs, over)] },
+    [commitStatus('o/r', 0)]: { state: 'success', statuses: [at(ageMs, over)] },
   }), { repos: ['o/r'] });
   const fresh = await runAt(30 * minute);
   assert.equal(fresh[1].workload.state, 'working');
@@ -218,7 +296,7 @@ test('only https claude.ai session URLs survive, through the sanitizer', async (
   for (const [target, want] of urls) {
     const records = await go(fakeFetch({
       '/repos/o/r/branches?per_page=100&page=1': branchList('feat-a'),
-      '/repos/o/r/commits/sha0/status': { state: 'success', statuses: [status({ target_url: target })] },
+      [commitStatus('o/r', 0)]: { state: 'success', statuses: [status({ target_url: target })] },
     }), { repos: ['o/r'] });
     assert.equal(records[1].workload.url, want, target);
   }
@@ -252,7 +330,7 @@ for (const [label, respond, message, reached] of failures) {
   test(`a ${label} failure becomes one account record with a clean error`, async () => {
     const records = await go(fakeFetch({
       '/repos/o/r/branches': respond,
-      '/repos/o/r/commits/sha0/status': respond,
+      [commitStatus('o/r', 0)]: respond,
     }), { repos: ['o/r'] });
     assert.equal(records.length, 1);
     assert.match(records[0].error, message);
@@ -283,6 +361,8 @@ test('config: claude-code-status hosts take no target, and options are validated
   assert.throws(() => options({ maxBranches: 1001 }), /maxBranches/);
   assert.throws(() => options({ idleAfterMinutes: 0 }), /idleAfterMinutes/);
   assert.throws(() => options({ staleAfterHours: 0 }), /staleAfterHours/);
+  assert.throws(() => options({ idleAfterMinutes: 60, staleAfterHours: 1 }), /idleAfterMinutes.*staleAfterHours/);
+  assert.doesNotThrow(() => options({ idleAfterMinutes: 59, staleAfterHours: 1 }));
   assert.throws(() => options({ maxBranches: '5' }), /integer/);
   assert.throws(() => options({ repos: 'o/r' }), /array/);
   assert.throws(() => options({ token: TOKEN }), /unknown key "token"/, 'the token never lives in config');
@@ -296,7 +376,7 @@ test('status shows Claude Code sessions in the same report shape and never print
   const fresh = new Date().toISOString();
   const fetchImpl = fakeFetch({
     '/repos/o/r/branches?per_page=100&page=1': branchList('feat-a'),
-    '/repos/o/r/commits/sha0/status': { state: 'success', statuses: [status({ created_at: fresh, updated_at: fresh })] },
+    [commitStatus('o/r', 0)]: { state: 'success', statuses: [status({ created_at: fresh, updated_at: fresh })] },
   }, []);
   const withRepos = { providers: { 'claude-code-status': { repos: ['o/r'] } } };
   writeConfig(home, { schemaVersion: 1, providers: withRepos.providers, hosts: [host] });
@@ -306,19 +386,14 @@ test('status shows Claude Code sessions in the same report shape and never print
   assert.equal(report.hosts[1].workload.branch, 'feat-a');
   assert.deepEqual(report.hosts[1].drift, []);
   const text = await run(['status'], { env, fetchImpl, tokenSource });
-  assert.match(text.out, new RegExp(`cc/${SID} \\(claude-code-status\\)  \\[OK\\]  working  o/r feat-a`));
+  assert.match(text.out, new RegExp(`cc/${SID} \\(claude-code-status\\)  \\[OK\\]  working \\(reported\\)  o/r feat-a`));
   for (const out of [json.out, json.err, text.out, text.err]) assert.doesNotMatch(out, /TESTTOKEN/);
 });
 
 test('untrusted session fields are sanitized before output', async () => {
-  const evil = {
-    id: '../evil', name: 'x', state: 'success', html_url: 'javascript:alert(1)',
-    repository: { id: 99 }, created_at: 'yesterday', updated_at: '2026-10-11T10:00:00Z',
-  };
-  assert.ok(evil);
   const records = await go(fakeFetch({
-    '/repos/o/r/branches?per_page=100&page=1': [{ name: 'feat-a', commit: { sha: 'sha0' } }],
-    '/repos/o/r/commits/sha0/status': {
+    '/repos/o/r/branches?per_page=100&page=1': [{ name: 'feat-a', commit: { sha: hexSha(0) } }],
+    [commitStatus('o/r', 0)]: {
       state: 'success',
       statuses: [status({ description: desc(), target_url: 'javascript:alert(1)', created_at: 'yesterday' })],
     },

@@ -28,6 +28,7 @@ export const STATUS_CONTEXT = 'agent-fleet/claude-code';
 const SESSION_ID = /^cse_[A-Za-z0-9]{8,64}$/;
 const STATES = new Set(['started', 'working', 'waiting', 'failed', 'ended']);
 const REPO = /^[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+$/;
+const SHA = /^[0-9a-f]{40,64}$/;
 const MAX_DESCRIPTION = 140;
 
 export class ApiError extends Error {}
@@ -38,11 +39,14 @@ export function validateOptions(options) {
   if (options.maxBranches < 1 || options.maxBranches > 1000) return 'maxBranches must be from 1 to 1000';
   if (options.idleAfterMinutes < 1 || options.idleAfterMinutes > 1000000) return 'idleAfterMinutes must be from 1 to 1000000';
   if (options.staleAfterHours < 1 || options.staleAfterHours > 1000000) return 'staleAfterHours must be from 1 to 1000000';
+  if (options.idleAfterMinutes >= options.staleAfterHours * 60) return 'idleAfterMinutes must be less than staleAfterHours * 60';
   return null;
 }
 
 // collect(host, { options, fetchImpl, tokenSource, deadline, now }) -> records.
-// `now` is injectable for staleness tests and defaults to Date.now().
+// Staleness "now" is the latest HTTP Date header seen on a statuses response
+// (last seen wins); `now` is the fallback when no response carried a parseable
+// Date, and stays injectable for staleness tests.
 export async function collect(host, { options, fetchImpl, tokenSource, deadline, now = Date.now() }) {
   const account = { name: host.name, provider: host.provider, reachable: false, error: null, workload: null };
   let token;
@@ -57,7 +61,8 @@ export async function collect(host, { options, fetchImpl, tokenSource, deadline,
   try {
     const { branches, truncated } = await listBranches(api, options.repos, options.maxBranches);
     const sessions = await collectSessions(api, branches);
-    const records = sessions.map((session) => sessionRecord(host, session, options, now));
+    const effectiveNow = api.serverNow() ?? now;
+    const records = sessions.map((session) => sessionRecord(host, session, options, effectiveNow));
     let workload = null;
     if (truncated || records.length > 0) {
       workload = { kind: 'claude-code-account', reportedSessions: records.length, truncated };
@@ -71,8 +76,17 @@ export async function collect(host, { options, fetchImpl, tokenSource, deadline,
   }
 }
 
+// The commits-status path carries a branch sha; error text uses this fixed
+// label instead so an unexpected sha can never be echoed back.
+function safePath(path) {
+  return path.replace(/\/commits\/[^/]+\/status$/, '/commits/<sha>/status');
+}
+
 function client({ base, token, fetchImpl, deadline }) {
-  return async function get(path) {
+  // Latest HTTP Date header seen on any response (last seen wins); null until
+  // the first dated response arrives. collect() uses it as staleness "now".
+  let serverNow = null;
+  async function get(path) {
     const timeoutMs = deadline - Date.now();
     if (timeoutMs <= 0) throw Object.assign(new ApiError('timed out'), { reached: true });
     let response;
@@ -92,15 +106,19 @@ function client({ base, token, fetchImpl, deadline }) {
       const why = error?.name === 'TimeoutError' || error?.name === 'AbortError' ? 'timed out' : 'network error';
       throw new ApiError(`GitHub API unreachable: ${why}`);
     }
+    const dateMs = Date.parse(response.headers?.get?.('date') ?? '');
+    if (!Number.isNaN(dateMs)) serverNow = dateMs;
     if (response.ok) {
       try {
         return await response.json();
       } catch {
-        throw Object.assign(new ApiError(`GitHub API ${path}: response is not JSON`), { reached: true });
+        throw Object.assign(new ApiError(`GitHub API ${safePath(path)}: response is not JSON`), { reached: true });
       }
     }
-    throw Object.assign(new ApiError(describeFailure(path, response)), { reached: true });
-  };
+    throw Object.assign(new ApiError(describeFailure(safePath(path), response)), { reached: true });
+  }
+  get.serverNow = () => serverNow;
+  return get;
 }
 
 // x-ratelimit-reset is epoch seconds; an absurd value must not crash
@@ -147,7 +165,10 @@ async function listBranches(api, repos, maxBranches) {
       const path = `/repos/${repo}/branches?per_page=${perPage}&page=${page}`;
       const body = await api(path);
       if (!Array.isArray(body)) throw Object.assign(new ApiError(`GitHub API ${path}: unexpected response shape`), { reached: true });
-      const batch = body.filter((b) => b && typeof b.name === 'string' && typeof b.commit?.sha === 'string');
+      // The sha becomes part of the next request path, so only hex shas
+      // (40 for SHA-1, up to 64 for SHA-256) are kept; anything else is
+      // skipped and therefore never fetched or echoed in an error.
+      const batch = body.filter((b) => b && typeof b.name === 'string' && typeof b.commit?.sha === 'string' && SHA.test(b.commit.sha));
       branches.push(...batch.slice(0, perPage).map((b) => ({ repo, branch: b.name, sha: b.commit.sha })));
       if (batch.length < perPage) {
         repoDone = true;
@@ -175,7 +196,7 @@ async function collectSessions(api, branches) {
     const path = `/repos/${repo}/commits/${sha}/status`;
     const body = await api(path);
     const statuses = Array.isArray(body?.statuses) ? body.statuses : null;
-    if (statuses === null) throw Object.assign(new ApiError(`GitHub API ${path}: unexpected response shape`), { reached: true });
+    if (statuses === null) throw Object.assign(new ApiError(`GitHub API ${safePath(path)}: unexpected response shape`), { reached: true });
     for (const status of statuses) {
       if (!status || status.context !== STATUS_CONTEXT) continue;
       const parsed = parseDescription(status.description);
