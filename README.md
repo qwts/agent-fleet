@@ -110,6 +110,11 @@ Each host has a provider, and every provider reports the same shape:
   record per session with its state, status detail, first pull request URL
   and timestamps in `workload`. It reads a read-only API key from the
   macOS Keychain; see [docs/devin.md](docs/devin.md).
+- **`claude-code-status`:** Claude Code cloud sessions read back from the
+  GitHub commit statuses a session-side hook posts (trial), one record per
+  session with its reported state, repository, branch and timestamps in
+  `workload`. It reads a read-only token from the macOS Keychain;
+  see [docs/claude-code-status.md](docs/claude-code-status.md).
 - **SSH providers:** whether the org profile is applied (`settings.unmanagedAuthors`
   and `settings.keydTeamId` present in `~/.config/agent-bot/config.json`;
   presence only, never values) and whether an SOP persona is recorded.

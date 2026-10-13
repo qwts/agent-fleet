@@ -35,7 +35,9 @@ function formatHost(host) {
 
 function formatWorkload(head, w) {
   const where = [w.repo, w.branch].filter(Boolean).join(' ');
-  const lines = [`${head}  ${w.state}${where ? `  ${where}` : ''}`];
+  // A workload session is a third-party claim, not a local fact: mark it.
+  const state = `${w.state}${w.reported ? ' (reported)' : ''}`;
+  const lines = [`${head}  ${state}${where ? `  ${where}` : ''}`];
   if (w.title) lines.push(`  title      ${w.title}`);
   if (w.url) lines.push(`  url        ${w.url}`);
   return `${lines.join('\n')}\n`;
